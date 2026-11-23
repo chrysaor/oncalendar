@@ -10,7 +10,7 @@ description: "Prove behavior of the oncalendar Rust library (systemd OnCalendar 
 Every command below goes through one helper:
 
 ```sh
-.claude/skills/verify-oncalendar/bin/verify <command>
+scripts/verify <command>
 ```
 
 It works from any directory inside the checkout.
@@ -19,7 +19,7 @@ It works from any directory inside the checkout.
 
 There is no server. Launch means building two things, and the helper does both on demand:
 
-- the probe, a crate outside the library that depends on it by path (`.claude/skills/verify-oncalendar/probe/`)
+- the probe, a crate outside the library that depends on it by path (`scripts/probe/`)
 - the oracle image, Debian with systemd, base image pinned by digest and packages by version (`oracle/Dockerfile`)
 
 Requirements: `cargo`, a running Docker daemon, `cargo-deny`, `cargo-hack`, `cargo-minimal-versions`, `actionlint`, `zizmor`, and the `thumbv7em-none-eabihf` target for the `no_std` gate. On macOS with colima, run `colima start` first. Ready means `verify doctor` exits 0.
@@ -27,7 +27,7 @@ Requirements: `cargo`, a running Docker daemon, `cargo-deny`, `cargo-hack`, `car
 ## Doctor
 
 ```sh
-.claude/skills/verify-oncalendar/bin/verify doctor
+scripts/verify doctor
 ```
 
 Read-only apart from build caches. It checks that cargo and Docker answer, that the library builds with and without default features, that the probe compiles against the current public API, and that the oracle answers a known case. Run it first whenever a result looks wrong. A failing "probe builds" line means the public API changed and `probe/src/main.rs` must follow.
@@ -37,9 +37,9 @@ Read-only apart from build caches. It checks that cargo and Docker answer, that 
 One case, when you are working on a specific behavior:
 
 ```sh
-.claude/skills/verify-oncalendar/bin/verify one <time zone> <base time> <expression>
-.claude/skills/verify-oncalendar/bin/verify one UTC '2026-01-01 00:00:00 UTC' 'Mon..Fri *-*-* 09:00'
-.claude/skills/verify-oncalendar/bin/verify one America/New_York '2026-11-01 06:15:00 UTC' '*:30'
+scripts/verify one <time zone> <base time> <expression>
+scripts/verify one UTC '2026-01-01 00:00:00 UTC' 'Mon..Fri *-*-* 09:00'
+scripts/verify one America/New_York '2026-11-01 06:15:00 UTC' '*:30'
 ```
 
 - `<time zone>` is the process-local zone. It applies when the expression names no zone.
@@ -49,8 +49,8 @@ One case, when you are working on a specific behavior:
 A whole file of cases:
 
 ```sh
-.claude/skills/verify-oncalendar/bin/verify compare                    # tests/fixtures/cases.tsv
-.claude/skills/verify-oncalendar/bin/verify compare path/to/cases.tsv
+scripts/verify compare                    # tests/fixtures/cases.tsv
+scripts/verify compare path/to/cases.tsv
 ```
 
 A case file has one case per line: `<time zone><TAB><base time><TAB><expression>`. Lines that start with `#` are section titles.
@@ -58,7 +58,7 @@ A case file has one case per line: `<time zone><TAB><base time><TAB><expression>
 The gates:
 
 ```sh
-.claude/skills/verify-oncalendar/bin/verify gates
+scripts/verify gates
 ```
 
 It runs formatting, the comment check, `scripts/check-features.sh`, `scripts/check-minimal-versions.sh`, `scripts/check-package.sh`, `scripts/check-workflows.sh`, the tests in both feature configurations, `scripts/check-security.sh`, `scripts/check-weight.sh`, `scripts/check-no-std.sh`, and `oracle/check.sh`, and prints PASS or FAIL per gate. A gate whose tool is missing fails and its evidence file says how to install the tool.
@@ -95,15 +95,15 @@ Proof standards:
 ## Cleanup
 
 ```sh
-.claude/skills/verify-oncalendar/bin/verify clean
+scripts/verify clean
 ```
 
 Removes the probe's build output (`target/verify-probe`). It keeps `.verify/`. Oracle containers are started with `--rm` and leave nothing behind. The oracle image `oncalendar-oracle` stays cached; remove it with `docker image rm oncalendar-oracle` if you need the space.
 
 ## Helpers
 
-- `bin/verify` is the only entry point. `verify` with no argument prints its usage.
-- `probe/` is the consumer crate. It prints rows in the oracle's format so that the two outputs diff cleanly.
+- `scripts/verify` is the only entry point. `verify` with no argument prints its usage.
+- `scripts/probe/` is the consumer crate. It prints rows in the oracle's format so that the two outputs diff cleanly.
 - `oracle/run.sh [ITERATIONS] < cases.tsv` is the raw oracle. `oracle/check.sh` fails when `tests/fixtures/expected.tsv` no longer matches systemd.
 - `scripts/check-*.sh` are the gates. Each runs standalone. The `no_std` gate fails when `thumbv7em-none-eabihf` is not installed (`rustup target add thumbv7em-none-eabihf`).
 

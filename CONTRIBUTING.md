@@ -36,7 +36,7 @@ The expected results come from systemd, never from this crate.
 5. Run the comparison against systemd and check that it reports `differing: 0`:
 
     ```sh
-    .claude/skills/verify-oncalendar/bin/verify compare
+    scripts/verify compare
     ```
 
 6. Commit `cases.tsv`, `expected.tsv`, and the code together.
@@ -46,7 +46,7 @@ Never edit `tests/fixtures/expected.tsv` by hand. `oracle/check.sh` fails in CI 
 To try one case before you add it, run `verify one` with the local zone, the base time, and the expression:
 
 ```sh
-.claude/skills/verify-oncalendar/bin/verify one UTC '2026-01-01 00:00:00 UTC' 'Mon..Fri *-*-* 09:00'
+scripts/verify one UTC '2026-01-01 00:00:00 UTC' 'Mon..Fri *-*-* 09:00'
 ```
 
 When a difference from systemd stays in the crate, list it under "Known differences from systemd" in `README.md` and in `docs/architecture.md`.
@@ -77,7 +77,7 @@ cargo test --no-default-features
 Run every gate:
 
 ```sh
-.claude/skills/verify-oncalendar/bin/verify gates
+scripts/verify gates
 ```
 
 The gates are formatting, the comment check, clippy on every feature combination, the tests with the lowest allowed dependency versions, the package check, the CI configuration check, the tests, the security gate, the weight gate, the `no_std` build, and the oracle check. Each gate is also a script that runs on its own:
@@ -129,7 +129,7 @@ If you add a file that belongs in the published crate, add it to `include` in `C
 | `zizmor` 1.33.1 | `scripts/check-workflows.sh` | `pipx install zizmor==1.33.1` |
 | Nightly Rust and `cargo-fuzz` 0.13.2 | `scripts/fuzz.sh` | `rustup toolchain install nightly` and `cargo install cargo-fuzz --locked` |
 
-The versions are the ones CI installs. `.claude/skills/verify-oncalendar/bin/verify doctor` checks cargo, Docker, the oracle, `cargo-deny`, `cargo-hack`, `cargo-minimal-versions`, `actionlint`, and `zizmor`.
+The versions are the ones CI installs. `scripts/verify doctor` checks cargo, Docker, the oracle, `cargo-deny`, `cargo-hack`, `cargo-minimal-versions`, `actionlint`, and `zizmor`.
 
 ## Pull requests
 

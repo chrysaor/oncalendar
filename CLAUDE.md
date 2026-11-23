@@ -44,9 +44,9 @@ cargo test --no-default-features
 cargo clippy --all-targets --no-default-features -- --deny warnings
 cargo clippy --all-targets --all-features -- --deny warnings
 cargo build --no-default-features --target thumbv7em-none-eabihf
-.claude/skills/verify-oncalendar/bin/verify doctor
-.claude/skills/verify-oncalendar/bin/verify compare
-.claude/skills/verify-oncalendar/bin/verify gates
+scripts/verify doctor
+scripts/verify compare
+scripts/verify gates
 scripts/fuzz.sh 60
 ```
 

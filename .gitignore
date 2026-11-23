@@ -1,6 +1,6 @@
 /target
 /.verify
-/.claude/skills/verify-oncalendar/probe/target
+/scripts/probe/target
 /fuzz/target
 /fuzz/corpus
 /fuzz/artifacts

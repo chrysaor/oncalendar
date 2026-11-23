@@ -1,8 +1,7 @@
 #!/bin/sh
 set -eu
 
-root=$(CDPATH= cd -- "$(dirname -- "$0")/../../../.." && pwd)
-skill="$root/.claude/skills/verify-oncalendar"
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 probe_target="$root/target/verify-probe"
 caller_dir=$PWD
 cd "$root"
@@ -15,7 +14,7 @@ evidence_dir() {
 }
 
 build_probe() {
-	CARGO_TARGET_DIR="$probe_target" cargo build --quiet --release --manifest-path "$skill/probe/Cargo.toml"
+	CARGO_TARGET_DIR="$probe_target" cargo build --quiet --release --manifest-path "$root/scripts/probe/Cargo.toml"
 }
 
 count_rows() {

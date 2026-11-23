@@ -12,8 +12,8 @@ Describe the change and the problem it solves.
 
 - [ ] A new or changed behavior starts as new rows in `tests/fixtures/cases.tsv`.
 - [ ] I regenerated `tests/fixtures/expected.tsv` with `oracle/run.sh` and did not edit it by hand.
-- [ ] `.claude/skills/verify-oncalendar/bin/verify compare` reports `differing: 0`. The summary line is below.
-- [ ] `.claude/skills/verify-oncalendar/bin/verify gates` passes.
+- [ ] `scripts/verify compare` reports `differing: 0`. The summary line is below.
+- [ ] `scripts/verify gates` passes.
 - [ ] Code, scripts, and configuration have no comments.
 - [ ] A difference from systemd that stays is listed under "Known differences from systemd" in `README.md` and `docs/architecture.md`.
 - [ ] A change that users can see has an entry in `CHANGELOG.md`.

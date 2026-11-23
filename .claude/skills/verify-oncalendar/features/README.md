@@ -4,7 +4,7 @@ This directory is the maintained source for verifying what a user of the `oncale
 
 ## Baseline preconditions
 
-- `verify` below means `.claude/skills/verify-oncalendar/bin/verify`.
+- `verify` below means `scripts/verify`.
 - `verify doctor` exits 0.
 - The default base time is `2026-01-01 00:00:00 UTC` and the default local zone is `UTC`, unless a recipe says otherwise.
 - The oracle is systemd 257 in the pinned image. Line 1 of every `oracle.tsv` names the exact build.
