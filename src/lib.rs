@@ -16,8 +16,10 @@
 //!   a time zone database the caller chooses, such as jiff's bundled one.
 //!
 //! Without the `jiff` feature the crate parses and normalizes only and has no dependencies.
-//! The crate is `no_std` and needs `alloc`. Without the `jiff` feature it builds for targets
-//! without `std`.
+//! The crate is `no_std` and needs `alloc`. The `jiff` feature alone also builds for targets
+//! without `std`. The `system-tzdb` feature (on by default) reads the system time zone
+//! database and needs `std`. Without it, `CalendarEvent::upcoming` knows no zone name other
+//! than `UTC`, and `CalendarEvent::upcoming_with` takes the database from the caller.
 //! Parsing never touches the file system. A time zone name in an expression is checked for its
 //! form when parsing and looked up in the time zone database when `CalendarEvent::upcoming` or
 //! `CalendarEvent::upcoming_with` runs.

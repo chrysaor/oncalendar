@@ -38,7 +38,8 @@ assert!("*-*-* 25:00".parse::<CalendarEvent>().is_err());
 
 | Feature | Default | Adds |
 | --- | --- | --- |
-| `jiff` | on | `CalendarEvent::upcoming` and `CalendarEvent::upcoming_with`. Depends on `jiff` 1 with only the `std`, `tzdb-zoneinfo`, and `tzdb-bundle-platform` features. |
+| `jiff` | on, through `system-tzdb` | `CalendarEvent::upcoming` and `CalendarEvent::upcoming_with`. Depends on `jiff` 1 with only its `alloc` feature. Works without `std`. |
+| `system-tzdb` | on | Named time zones from the system time zone database. Turns on `jiff` and jiff's `std`, `tzdb-zoneinfo`, and `tzdb-bundle-platform` features. Needs `std`. |
 
 With `default-features = false`, the crate parses and normalizes, and it depends on no other crate. Prototype measurements, stripped release executables:
 
@@ -51,7 +52,23 @@ These numbers come from small prototypes, not from this crate. See [docs/archite
 
 MSRV is Rust 1.85, edition 2024.
 
-The crate is `#![no_std]` and needs `alloc`, so it runs on embedded targets that have a global allocator. With `default-features = false` it builds for targets without `std`, such as `thumbv7em-none-eabihf`. The `jiff` feature needs a target with `std`, because it reads the system time zone database.
+The crate is `#![no_std]` and needs `alloc`, so it runs on embedded targets that have a global allocator. With `default-features = false`, and also with only the `jiff` feature, it builds for targets without `std`, such as `thumbv7em-none-eabihf`.
+
+On such a target, pass a fixed offset or UTC as the local zone:
+
+```toml
+oncalendar = { version = "0.1", default-features = false, features = ["jiff"] }
+```
+
+Without `system-tzdb`, `upcoming` has no time zone database, so an expression that names a zone other than `UTC` returns `UnknownTimeZone`. To support names there, turn on jiff's `tzdb-bundle-always` feature and pass `TimeZoneDatabase::bundled()` to `upcoming_with`.
+
+Code size for `thumbv7em-none-eabihf`, a minimal program built with `opt-level = "z"`, LTO, and `panic = "abort"` (measured once, built but not run on a device):
+
+| Build | `.text` |
+| --- | --- |
+| Parse and normalize, no dependencies | 31,378 bytes |
+| `jiff` feature, fixed offset as the local zone | 39,635 bytes |
+| `jiff` feature and jiff's bundled time zone database | 292,796 bytes |
 
 ## Known differences from systemd
 

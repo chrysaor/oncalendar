@@ -4,6 +4,7 @@ set -eu
 cd "$(dirname -- "$0")/.."
 
 MAX_NO_DEFAULT_DEPS=0
+MAX_JIFF_DEPS=2
 MAX_DEFAULT_DEPS=2
 
 count_deps() {
@@ -32,6 +33,11 @@ echo "no default features"
 echo "  dependencies: $no_default_deps (limit $MAX_NO_DEFAULT_DEPS)"
 measure no-default --no-default-features
 
+jiff_deps=$(count_deps --no-default-features --features jiff) || exit 1
+echo "jiff feature only"
+echo "  dependencies: $jiff_deps (limit $MAX_JIFF_DEPS)"
+measure jiff --no-default-features --features jiff
+
 default_deps=$(count_deps) || exit 1
 echo "default features"
 echo "  dependencies: $default_deps (limit $MAX_DEFAULT_DEPS)"
@@ -44,6 +50,7 @@ fi
 
 fail=0
 [ "$no_default_deps" -le "$MAX_NO_DEFAULT_DEPS" ] || { echo "FAIL: dependency count without default features is over the limit"; fail=1; }
+[ "$jiff_deps" -le "$MAX_JIFF_DEPS" ] || { echo "FAIL: dependency count with only the jiff feature is over the limit"; fail=1; }
 [ "$default_deps" -le "$MAX_DEFAULT_DEPS" ] || { echo "FAIL: dependency count with default features is over the limit"; fail=1; }
 [ "$fail" -eq 0 ] && echo && echo "weight gate: PASS"
 exit "$fail"

@@ -14,5 +14,6 @@ fi
 
 echo "$(rustc --version), target $TARGET"
 cargo build --quiet --no-default-features --target "$TARGET"
+cargo build --quiet --no-default-features --features jiff --target "$TARGET"
 
 printf '\nno_std gate: PASS\n'

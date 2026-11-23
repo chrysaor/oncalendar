@@ -274,17 +274,20 @@ A name must match a name in the database exactly, letter case included, in both 
 
 The core has no dependencies. It holds the parser, the model, and the normalized output. The parser is a pure function of the input string. It reads neither the file system nor the environment.
 
-The feature `jiff` adds `upcoming`, `Upcoming`, and `UnknownTimeZone`. It is on by default. With `default-features = false` the crate parses and normalizes, and compiles no other crate.
+The feature `jiff` adds `upcoming`, `upcoming_with`, `Upcoming`, and `UnknownTimeZone`. It asks jiff for `alloc` only, so it works without `std`. The feature `system-tzdb` turns on `jiff` and the jiff features that read the system time zone database. It is the default. With `default-features = false` the crate parses and normalizes, and compiles no other crate.
+
+The two are separate so that an embedded target can compute elapses. Such a target usually runs on UTC or a fixed offset and has no time zone files. A second search written without jiff was rejected: the `jiff` feature adds about 8 KB of code on `thumbv7em-none-eabihf` (31,378 to 39,635 bytes of `.text`, measured once with `opt-level = "z"`, LTO, and `panic = "abort"`, built but not run on a device), and one search stays the only one to verify. jiff's bundled database adds about 253 KB on top, so it stays the caller's choice.
 
 Manifest entries:
 
 ```toml
 [features]
-default = ["jiff"]
+default = ["system-tzdb"]
 jiff = ["dep:jiff"]
+system-tzdb = ["jiff", "jiff/std", "jiff/tzdb-zoneinfo", "jiff/tzdb-bundle-platform"]
 
 [dependencies]
-jiff = { version = "1", optional = true, default-features = false, features = ["std", "tzdb-zoneinfo", "tzdb-bundle-platform"] }
+jiff = { version = "1", optional = true, default-features = false, features = ["alloc"] }
 ```
 
 - `tz-system` stays off. The crate never calls `TimeZone::system()`. A caller that wants the system zone turns `tz-system` on in its own jiff dependency.
@@ -299,7 +302,7 @@ The requirement `jiff = "1"` stays as it is. Its lowest version, jiff 1.0.0, bui
 
 The crate is `#![no_std]` and links `alloc` in every configuration, with no `std` or `alloc` feature. It needs a global allocator, because a parsed expression holds its lists in `Vec` and a zone name in `Box<str>`. The error types implement `core::error::Error`, which is stable since Rust 1.81, below the MSRV.
 
-Without default features the crate builds for `thumbv7em-none-eabihf`, a target with no `std`. With the `jiff` feature the crate itself is still `no_std`, but jiff's `tzdb-zoneinfo` feature turns on jiff's `std` feature, so that build needs a target with `std`. With jiff's features reduced to `alloc`, the `jiff` feature also builds for `thumbv7em-none-eabihf` on the current toolchain and on 1.85 (measured once, not gated). That configuration would have no system time zone database, so `upcoming` would find no named zone. It is not offered.
+Without default features the crate builds for `thumbv7em-none-eabihf`, a target with no `std`. The `jiff` feature alone builds for the same target, and `scripts/check-no-std.sh` builds both. With `system-tzdb` the crate itself is still `no_std`, but jiff's `tzdb-zoneinfo` feature turns on jiff's `std` feature, so that build needs a target with `std`. Without `system-tzdb`, jiff's global database is empty, so `upcoming` finds no named zone and the caller passes a database to `upcoming_with`.
 
 The unit test in `next` declares `extern crate std` inside its test module to print its report. `#![cfg_attr(not(test), no_std)]` would do the same at the crate root, but `scripts/check-security.sh` rejects `cfg_attr` in `src/`.
 

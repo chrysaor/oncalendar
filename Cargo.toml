@@ -11,11 +11,12 @@ categories = ["date-and-time", "parser-implementations"]
 include = ["/src", "/tests", "/README.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
 
 [features]
-default = ["jiff"]
+default = ["system-tzdb"]
 jiff = ["dep:jiff"]
+system-tzdb = ["jiff", "jiff/std", "jiff/tzdb-zoneinfo", "jiff/tzdb-bundle-platform"]
 
 [dependencies]
-jiff = { version = "1", default-features = false, features = ["std", "tzdb-zoneinfo", "tzdb-bundle-platform"], optional = true }
+jiff = { version = "1", default-features = false, features = ["alloc"], optional = true }
 
 [dev-dependencies]
 jiff = { version = "1", default-features = false, features = ["std", "tzdb-bundle-always"] }
