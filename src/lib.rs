@@ -19,6 +19,9 @@
 //!   after a given instant. The crate has no ambient "local time": the caller passes the
 //!   time zone that stands for "local time". `CalendarEvent::upcoming_with` does the same with
 //!   a time zone database the caller chooses, such as jiff's bundled one.
+//! - With the `cron` feature (off by default), `CalendarEvent::from_cron` converts a
+//!   five-field cron schedule into the calendar events that elapse at the same minutes. It adds
+//!   no dependency and works without `std`.
 //!
 //! Without the `jiff` feature the crate parses and normalizes only and has no dependencies.
 //! The crate is `no_std` and needs `alloc`. The `jiff` feature alone also builds for targets
@@ -35,6 +38,8 @@
 
 extern crate alloc;
 
+#[cfg(feature = "cron")]
+mod cron;
 mod error;
 mod format;
 mod model;
@@ -44,6 +49,8 @@ mod parse;
 #[cfg(feature = "jiff")]
 mod zone;
 
+#[cfg(feature = "cron")]
+pub use crate::cron::CronError;
 pub use crate::error::ParseError;
 pub use crate::model::CalendarEvent;
 #[cfg(feature = "jiff")]
@@ -51,6 +58,6 @@ pub use crate::next::Upcoming;
 #[cfg(feature = "jiff")]
 pub use crate::zone::UnknownTimeZone;
 
-#[cfg(all(doctest, feature = "jiff"))]
+#[cfg(all(doctest, feature = "jiff", feature = "cron"))]
 #[doc = include_str!("../README.md")]
 struct ReadmeExamples;

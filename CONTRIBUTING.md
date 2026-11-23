@@ -109,8 +109,10 @@ Check that the documentation builds and that its examples run. The examples in `
 RUSTDOCFLAGS="--deny warnings" cargo doc --no-deps --all-features
 RUSTDOCFLAGS="--deny warnings" cargo doc --no-deps --no-default-features
 cargo test --doc --all-features
-cargo test --doc --no-default-features --features jiff
+cargo test --doc --no-default-features --features jiff,cron
 ```
+
+The `README.md` examples run only when both `jiff` and `cron` are on.
 
 After a change to the parser or to the elapse search, run the fuzz targets for 60 seconds each:
 

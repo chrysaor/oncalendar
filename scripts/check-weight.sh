@@ -4,6 +4,7 @@ set -eu
 cd "$(dirname -- "$0")/.."
 
 MAX_NO_DEFAULT_DEPS=0
+MAX_CRON_DEPS=0
 MAX_JIFF_DEPS=2
 MAX_DEFAULT_DEPS=2
 MAX_CLI_DEPS=4
@@ -37,6 +38,11 @@ echo "no default features"
 echo "  dependencies: $no_default_deps (limit $MAX_NO_DEFAULT_DEPS)"
 measure no-default --no-default-features
 
+cron_deps=$(count_deps oncalendar --no-default-features --features cron) || exit 1
+echo "cron feature only"
+echo "  dependencies: $cron_deps (limit $MAX_CRON_DEPS)"
+measure cron --no-default-features --features cron
+
 jiff_deps=$(count_deps oncalendar --no-default-features --features jiff) || exit 1
 echo "jiff feature only"
 echo "  dependencies: $jiff_deps (limit $MAX_JIFF_DEPS)"
@@ -63,6 +69,7 @@ fi
 
 fail=0
 [ "$no_default_deps" -le "$MAX_NO_DEFAULT_DEPS" ] || { echo "FAIL: dependency count without default features is over the limit"; fail=1; }
+[ "$cron_deps" -le "$MAX_CRON_DEPS" ] || { echo "FAIL: dependency count with only the cron feature is over the limit"; fail=1; }
 [ "$jiff_deps" -le "$MAX_JIFF_DEPS" ] || { echo "FAIL: dependency count with only the jiff feature is over the limit"; fail=1; }
 [ "$default_deps" -le "$MAX_DEFAULT_DEPS" ] || { echo "FAIL: dependency count with default features is over the limit"; fail=1; }
 [ "$cli_deps" -le "$MAX_CLI_DEPS" ] || { echo "FAIL: dependency count of the command-line tool is over the limit"; fail=1; }

@@ -119,6 +119,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 In both functions a name must match a name in the database exactly, letter case included. An unknown name gives `UnknownTimeZone`.
 
+## Convert a cron schedule
+
+The `cron` feature adds `CalendarEvent::from_cron`, which turns the five time fields of a crontab line into `OnCalendar=` values. It adds no dependency.
+
+```toml
+[dependencies]
+oncalendar = { version = "0.1", features = ["cron"] }
+```
+
+```rust
+use oncalendar::CalendarEvent;
+
+fn main() -> Result<(), oncalendar::CronError> {
+    let events = CalendarEvent::from_cron("*/45 9-17 * * mon-fri")?;
+    let lines: Vec<String> = events.iter().map(ToString::to_string).collect();
+    assert_eq!(lines, ["Mon..Fri *-*-* 09..17:00..45/45:00"]);
+
+    let events = CalendarEvent::from_cron("0 9 1 * 1")?;
+    let lines: Vec<String> = events.iter().map(ToString::to_string).collect();
+    assert_eq!(lines, ["*-*-01 09:00:00", "Mon *-*-* 09:00:00"]);
+
+    let error = CalendarEvent::from_cron("0 0 L * *").unwrap_err();
+    assert_eq!(error.offset(), 4);
+    Ok(())
+}
+```
+
+The result is a list. When both the day of month and the day of week are restricted, cron runs on a day that matches either one, while a calendar event needs both, so `0 9 1 * 1` becomes two events. A timer unit takes several `OnCalendar=` lines and elapses at each of them:
+
+```ini
+[Timer]
+OnCalendar=*-*-01 09:00:00
+OnCalendar=Mon *-*-* 09:00:00
+```
+
+- Fields take `*`, values, ranges, lists, steps after `*` or a range, three-letter month and weekday names in any case, and 0 or 7 for Sunday. `@yearly`, `@annually`, `@monthly`, `@weekly`, `@daily`, `@midnight`, and `@hourly` work too. `@weekly` is Sunday at midnight, as in cron, and systemd's `weekly` is Monday.
+- A step that does not reach the end of its field, such as `*/45`, becomes a stepped range (`00..45/45`), because systemd's `0/45` carries on past the end of the day and would skip midnight.
+- Rejected with an error: seconds and year fields, `L`, `W`, `#`, `?`, `@reboot`, a step after a single value such as `5/15`, and input longer than 1024 bytes.
+- The events name no time zone. They elapse in the timer's local time, with systemd's daylight saving time rules, which differ between cron daemons.
+
+The converted events are fixture rows that systemd checks. No real cron runs in the tests: the cron side is a reference calculator written from the POSIX `crontab` specification and the `crontab(5)` manual, compared minute by minute in UTC. [docs/architecture.md](docs/architecture.md#cron-conversion) has the rules and their sources.
+
 ## Use it without `std`
 
 The crate is `#![no_std]` and needs `alloc`, so it runs on targets that have a global allocator. With only the `jiff` feature it computes elapses without `std`:
@@ -177,6 +219,7 @@ The module is 545 KB, or 176 KB with gzip. About 280 KB of it is jiff's bundled 
 | --- | --- | --- |
 | `jiff` | on, through `system-tzdb` | `CalendarEvent::upcoming`, `CalendarEvent::upcoming_with`, `Upcoming`, and `UnknownTimeZone`. Depends on `jiff` 1 with only its `alloc` feature, so it works without `std`. |
 | `system-tzdb` | on | Named time zones from the system time zone database for `upcoming`. Turns on `jiff`, and jiff's `std`, `tzdb-zoneinfo`, and `tzdb-bundle-platform` features. Needs `std`. |
+| `cron` | off | `CalendarEvent::from_cron` and `CronError`. No dependency, works without `std`. |
 
 With `default-features = false`, the crate parses and normalizes, and it compiles no other crate. With the default features on a Unix host, it compiles `jiff` and `jiff-core`. `scripts/check-weight.sh` checks both counts.
 
@@ -238,6 +281,7 @@ The expected results come from systemd, never from this crate. `oracle/` runs `s
 - `tests/oracle.rs` checks every fixture row through the public API: whether the expression is accepted, the normalized form, and the first five elapses.
 - `tests/normalize.rs` checks the normalized forms again with no feature, so the build without dependencies is covered.
 - `tests/robustness.rs` checks that hostile input never panics, never loops, and never appears in an error message, and checks the elapses against a slow reference search.
+- `tests/cron.rs` checks `from_cron` against `tests/fixtures/cron.tsv`, checks that each converted event is a fixture row systemd accepted, and compares the elapses of the converted events with a reference cron calculator in UTC: the fixture rows over 2024 to 2031 and 1,500 random expressions over four years each.
 - `scripts/check-wasm.sh` builds the library for WebAssembly and checks every fixture row again through that build.
 - The scripts in `scripts/` check the lints, the licenses of dependencies, the dependency count, the `no_std` build, every feature combination, the lowest allowed dependency versions, the packaged files, and the CI configuration. `scripts/fuzz.sh` runs the `cargo-fuzz` targets in `fuzz/`.
 - `cli/tests/` runs the command-line tool against every fixture row, as an argument and on standard input.

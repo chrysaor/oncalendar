@@ -23,6 +23,7 @@ fi
 
 step "3/3 robustness tests"
 cargo test --quiet --all-features --test robustness
+cargo test --quiet --all-features --test cron
 cargo test --quiet --no-default-features --test robustness
 
 printf '\nsecurity gate: PASS\n'
