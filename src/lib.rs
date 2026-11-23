@@ -1,10 +1,15 @@
 //! Parse systemd calendar event expressions (`OnCalendar=`) and compute when they elapse next.
 //!
-//! ```text
-//! let event: CalendarEvent = "Mon..Fri *-*-* 09:00".parse()?;
-//! event.to_string();                       // "Mon..Fri *-*-* 09:00:00"
-//! event.upcoming(now, &local)?.next();     // the next elapse after `now`, or `None`
 //! ```
+//! use oncalendar::CalendarEvent;
+//!
+//! let event: CalendarEvent = "Mon..Fri 9:00".parse()?;
+//! assert_eq!(event.to_string(), "Mon..Fri *-*-* 09:00:00");
+//! # Ok::<(), oncalendar::ParseError>(())
+//! ```
+//!
+//! With the `jiff` feature, `event.upcoming(after, &local)?.next()` is the first elapse after
+//! `after`, or `None` when there is none.
 //!
 //! - [`CalendarEvent`] is a parsed expression. Parse it with [`str::parse`]. Its [`Display`]
 //!   output is the normalized form, the same text `systemd-analyze calendar` prints.
@@ -45,3 +50,7 @@ pub use crate::model::CalendarEvent;
 pub use crate::next::Upcoming;
 #[cfg(feature = "jiff")]
 pub use crate::zone::UnknownTimeZone;
+
+#[cfg(all(doctest, feature = "jiff"))]
+#[doc = include_str!("../README.md")]
+struct ReadmeExamples;

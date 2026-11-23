@@ -3,7 +3,8 @@ set -eu
 
 cd "$(dirname -- "$0")/.."
 
-expected='Cargo.lock
+expected='CHANGELOG.md
+Cargo.lock
 Cargo.toml
 Cargo.toml.orig
 LICENSE-APACHE

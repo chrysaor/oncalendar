@@ -13,13 +13,14 @@ use crate::zone::{UnknownTimeZone, resolve};
 const FUEL: u32 = 20_000;
 
 impl CalendarEvent {
-    /// The elapses strictly after `after`, in increasing order.
+    /// The elapses strictly after `after`, in increasing order. Available with the `jiff`
+    /// feature.
     ///
     /// `local` is the time zone for an expression that names none. An expression that names a
-    /// time zone ignores it and is looked up in jiff's global time zone database,
-    /// [`jiff::tz::db`]. Results have microsecond precision and lie in the years 1970 to 2199
-    /// on the wall clock of the effective time zone, so the UTC instant can be a few hours
-    /// outside those years. A time that does not exist on the wall clock (a daylight saving
+    /// time zone ignores `local`. `UTC` needs no database, and any other name is looked up in
+    /// jiff's global time zone database, [`jiff::tz::db`]. Results have microsecond precision
+    /// and lie in the years 1970 to 2199 on the wall clock of the effective time zone, so the
+    /// UTC instant can be a few hours outside those years. A time that does not exist on the wall clock (a daylight saving
     /// gap) is skipped. A time that occurs twice (a fold) elapses once, at the earliest instant
     /// after `after`.
     ///
@@ -30,6 +31,23 @@ impl CalendarEvent {
     ///
     /// [`UnknownTimeZone`] when the expression names a time zone that the time zone database
     /// does not have.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use jiff::Timestamp;
+    /// use jiff::tz::TimeZone;
+    /// use oncalendar::CalendarEvent;
+    ///
+    /// let event: CalendarEvent = "*-*-* 12:00".parse()?;
+    /// let after: Timestamp = "2026-01-01T12:00:00Z".parse()?;
+    /// let mut elapses = event.upcoming(after, &TimeZone::UTC)?;
+    /// assert_eq!(elapses.next(), Some("2026-01-02T12:00:00Z".parse()?));
+    ///
+    /// let unknown: CalendarEvent = "daily Nowhere/Bogus".parse()?;
+    /// assert!(unknown.upcoming(after, &TimeZone::UTC).is_err());
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn upcoming(
         &self,
         after: Timestamp,
@@ -39,7 +57,7 @@ impl CalendarEvent {
     }
 
     /// Like [`upcoming`](CalendarEvent::upcoming), with a time zone named in the expression
-    /// looked up in `database`.
+    /// looked up in `database`. Available with the `jiff` feature.
     ///
     /// Use it where the host has no time zone files, such as a minimal container, or to get the
     /// same answers on every host, with [`TimeZoneDatabase::bundled`] (jiff's
@@ -49,6 +67,25 @@ impl CalendarEvent {
     /// # Errors
     ///
     /// [`UnknownTimeZone`] when the expression names a time zone that `database` does not have.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use jiff::Timestamp;
+    /// use jiff::tz::{TimeZone, TimeZoneDatabase};
+    /// use oncalendar::CalendarEvent;
+    ///
+    /// let database = TimeZoneDatabase::bundled();
+    /// let after: Timestamp = "2026-07-01T00:00:00Z".parse()?;
+    ///
+    /// let event: CalendarEvent = "*-*-* 09:00 Europe/Berlin".parse()?;
+    /// let next = event.upcoming_with(after, &TimeZone::UTC, &database)?.next();
+    /// assert_eq!(next, Some("2026-07-01T07:00:00Z".parse()?));
+    ///
+    /// let lower_case: CalendarEvent = "*-*-* 09:00 europe/berlin".parse()?;
+    /// assert!(lower_case.upcoming_with(after, &TimeZone::UTC, &database).is_err());
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn upcoming_with(
         &self,
         after: Timestamp,
@@ -71,7 +108,21 @@ impl CalendarEvent {
 /// The elapses of a [`CalendarEvent`] after an instant. Made by [`CalendarEvent::upcoming`]
 /// and [`CalendarEvent::upcoming_with`].
 ///
-/// Once it returns `None` it keeps returning `None`.
+/// Once it returns `None` it keeps returning `None`. Available with the `jiff` feature.
+///
+/// ```
+/// use jiff::Timestamp;
+/// use jiff::tz::TimeZone;
+/// use oncalendar::CalendarEvent;
+///
+/// let event: CalendarEvent = "2026-03-15 08:00".parse()?;
+/// let after: Timestamp = "2026-01-01T00:00:00Z".parse()?;
+/// let mut elapses = event.upcoming(after, &TimeZone::UTC)?;
+/// assert_eq!(elapses.next(), Some("2026-03-15T08:00:00Z".parse()?));
+/// assert_eq!(elapses.next(), None);
+/// assert_eq!(elapses.next(), None);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[derive(Clone, Debug)]
 pub struct Upcoming<'a> {
     event: &'a CalendarEvent,

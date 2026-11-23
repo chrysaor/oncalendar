@@ -1,0 +1,66 @@
+name: Different result from systemd
+description: oncalendar accepts, rejects, normalizes, or schedules an expression differently from systemd-analyze calendar.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the "Known differences from systemd" section of README.md first. The differences listed there are expected.
+
+        Do not paste code from systemd or from another implementation of this grammar. The output of `systemd-analyze calendar` is all that is needed.
+  - type: input
+    id: expression
+    attributes:
+      label: Expression
+      description: The calendar event expression, exactly as you passed it.
+      placeholder: "Mon..Fri *-*-* 09:00"
+    validations:
+      required: true
+  - type: input
+    id: base-time
+    attributes:
+      label: Base time
+      description: The instant the elapses are counted from, with its time zone.
+      placeholder: "2026-01-01 00:00:00 UTC"
+    validations:
+      required: true
+  - type: input
+    id: time-zone
+    attributes:
+      label: Local time zone
+      description: The TZ value for systemd-analyze, and the local zone you passed to upcoming.
+      placeholder: "America/New_York"
+    validations:
+      required: true
+  - type: input
+    id: systemd-version
+    attributes:
+      label: systemd version
+      description: The first line of systemd-analyze --version.
+      placeholder: "systemd 257 (257.13-1~deb13u1)"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected output from systemd
+      description: The command you ran and its full output.
+      placeholder: |
+        $ TZ=America/New_York systemd-analyze calendar --iterations=5 --base-time='2026-01-01 00:00:00 UTC' 'Mon..Fri *-*-* 09:00'
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Output from oncalendar
+      description: The normalized form and the elapses that oncalendar gives, or the error.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: crate-version
+    attributes:
+      label: oncalendar version and features
+      placeholder: "0.1.0, default features"
+    validations:
+      required: true

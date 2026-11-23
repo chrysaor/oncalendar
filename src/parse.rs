@@ -43,6 +43,11 @@ impl FromStr for CalendarEvent {
     /// Leading whitespace is an error, and so is trailing whitespace after a time or a
     /// shorthand. Each numeric field takes at most 241 list items. A time zone name is checked
     /// for its form only.
+    ///
+    /// # Errors
+    ///
+    /// [`ParseError`] when the input is not a calendar event expression, such as an empty
+    /// string, a value out of range, or a misplaced space.
     fn from_str(input: &str) -> Result<Self, ParseError> {
         if input.is_empty() {
             return Err(ParseError::new(ErrorKind::Empty, 0));

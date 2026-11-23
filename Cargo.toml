@@ -5,10 +5,11 @@ edition = "2024"
 rust-version = "1.85"
 description = "Parse systemd calendar event expressions (OnCalendar=) and compute when they elapse next."
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/chrysaor/oncalendar"
 readme = "README.md"
 keywords = ["systemd", "calendar", "timer", "schedule", "parser"]
 categories = ["date-and-time", "parser-implementations"]
-include = ["/src", "/tests", "/README.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
+include = ["/src", "/tests", "/README.md", "/CHANGELOG.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
 
 [features]
 default = ["system-tzdb"]
@@ -23,6 +24,11 @@ jiff = { version = "1", default-features = false, features = ["std", "tzdb-bundl
 
 [[test]]
 name = "oracle"
+required-features = ["jiff"]
+
+[[bench]]
+name = "speed"
+harness = false
 required-features = ["jiff"]
 
 [lints.rust]

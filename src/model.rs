@@ -458,7 +458,17 @@ pub(crate) enum Zone {
 /// A parsed calendar event expression, always held in normalized form.
 ///
 /// Two expressions that normalize to the same text are equal. Create one with [`str::parse`],
-/// print the normalized form with [`Display`](core::fmt::Display).
+/// and print the normalized form with [`Display`](core::fmt::Display).
+///
+/// ```
+/// use oncalendar::CalendarEvent;
+///
+/// let listed: CalendarEvent = "Mon,Tue,Wed 9:00".parse()?;
+/// let ranged: CalendarEvent = "mon..wed *-*-* 09:00:00".parse()?;
+/// assert_eq!(listed, ranged);
+/// assert_eq!(listed.to_string(), "Mon..Wed *-*-* 09:00:00");
+/// # Ok::<(), oncalendar::ParseError>(())
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct CalendarEvent {
     pub(crate) weekdays: WeekdaySet,

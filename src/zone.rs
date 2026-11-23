@@ -9,7 +9,19 @@ use crate::model::Zone;
 /// Parsing accepts any well-formed name, so this is reported by
 /// [`CalendarEvent::upcoming`](crate::CalendarEvent::upcoming) and
 /// [`CalendarEvent::upcoming_with`](crate::CalendarEvent::upcoming_with). Local time zone
-/// abbreviations such as `KST` are not supported and are reported the same way.
+/// abbreviations such as `KST` are not supported and are reported the same way. Available with
+/// the `jiff` feature.
+///
+/// ```
+/// use jiff::Timestamp;
+/// use jiff::tz::TimeZone;
+/// use oncalendar::CalendarEvent;
+///
+/// let event: CalendarEvent = "daily Nowhere/Bogus".parse()?;
+/// let error = event.upcoming(Timestamp::UNIX_EPOCH, &TimeZone::UTC).unwrap_err();
+/// assert!(error.to_string().contains("not in the time zone database"));
+/// # Ok::<(), oncalendar::ParseError>(())
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UnknownTimeZone {
     _private: (),

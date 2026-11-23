@@ -2,7 +2,7 @@
 
 This document is the design for `oncalendar` v0.1, and `src/` implements it. Every section says what is decided and why, so that a contributor can change the code without reopening the decisions.
 
-Behavior claims marked "observed" come from `systemd-analyze calendar` in systemd 257.13, run in the container under `oracle/`. Numbers marked "measured" were measured on small prototype crates during the design. Numbers marked "estimate" were worked out by hand and not measured.
+Behavior claims marked "observed" come from `systemd-analyze calendar` in systemd 257.13, run in the container under `oracle/`. Numbers marked "measured" were measured on this crate, or on small prototype crates during the design where the text says so. Numbers marked "estimate" were worked out by hand and not measured.
 
 ## Goals and scope
 
@@ -326,6 +326,29 @@ Measured on prototype executables, release build, stripped, five alternating run
 
 With default features, jiff resolves to 12 crates summed over all platforms, including the Windows and wasm ones. The reduced row did not include `tzdb-bundle-platform`. That feature adds a crate only on Windows and wasm, so the macOS number should not change (estimate).
 
+### Speed
+
+`benches/speed.rs` measures parsing, the normalized output, and `upcoming_with` with the bundled time zone database, so the results do not depend on the host's tzdata. It uses `std::time::Instant` and `std::hint::black_box` with `harness = false`, so it adds no dependency. Each case checks its result before it is timed and prints it next to the time. Each case is the median of 15 batches of at least 4 ms. The whole run takes about 2 s, so `scripts/check-weight.sh` runs it in `verify gates`. `cargo bench -- <filter>` runs the cases whose name contains the filter.
+
+`Cargo.toml` declares the bench target, and the `include` list leaves `benches/` out, so `cargo package` drops the target from the published manifest with a warning.
+
+Measured on an Apple M3 Max, macOS, Rust 1.99, release build, the median of five runs. The machine was running other work. The range across the runs was within 9% of the median for every case.
+
+| Case | Time |
+| --- | --- |
+| Parse `daily` | 184 ns |
+| Parse `Mon..Fri *-*-* 09:00:00` | 219 ns |
+| Parse a 123-byte list | 1.1 µs |
+| Parse the longest fixture (6,099 bytes) | 96 µs |
+| Reject `2026-13-01` | 82 ns |
+| Print the normalized form of `daily` | 89 ns |
+| First elapse of `daily`, UTC | 84 ns |
+| Each of 100 elapses of `Mon..Fri 09:00`, Europe/Berlin | 305 ns |
+| First elapse of `Mon *-02-29` (2044) | 1.0 µs |
+| Each of 1,000 elapses of `*:*:0/5` | 37 ns |
+
+Where the time goes (sampled once with macOS `sample`): a short expression spends about 40% of its parse time allocating and about a quarter building substring searchers. An elapse search spends 80% to 100% in the crate's civil search loop and up to about 20% in jiff's time zone conversion. A rare match such as a Monday on February 29 costs more because the search steps through years.
+
 ### Rejected alternatives
 
 | Alternative | Why it lost |
@@ -341,7 +364,7 @@ With default features, jiff resolves to 12 crates summed over all platforms, inc
 ## Module boundaries
 
 ```
-src/lib.rs     crate docs and re-exports, no logic
+src/lib.rs     crate docs, re-exports, and the README doctests, no logic
 src/error.rs   ParseError and its private kinds
 src/model.rs   the types above, their constructors, pure queries such as Component::next_at_or_after
 src/parse.rs   &str to CalendarEvent, the FromStr impl
@@ -843,6 +866,7 @@ The repository carries no code comments (see `CLAUDE.md`), so the reasons behind
 - The slow reference in `tests/robustness.rs` can be checked against systemd. Run `cargo test --test robustness -- --ignored --nocapture print_generated > gen.tsv`, then `grep -v '^[a-z]' gen.tsv | cut -f1-3 | oracle/run.sh > gen.expected.tsv`. Column 4 of `gen.tsv` must be a prefix of column 6 of `gen.expected.tsv`, and column 4 of `gen.expected.tsv` must be `ok`. The reference gives a day counted from the end one item, because longer lists hit the limit under [Dates](#dates).
 - The slow reference in `tests/robustness.rs` tests every grid point, so it cannot express the wrap floor of the [civil search](#civil-search). Its generator gives `v/r` items in the hour, minute, and second fields only steps that end exactly at the field length (`(24 - v) % r == 0` or `(60 - v) % r == 0`), where the floor equals the minimum. The fixtures and the oracle cover the floor.
 - In `tests/robustness.rs`, the list-cap test leaves out lists of distinct days from the end. Under the limit in [Dates](#dates), at most seven distinct days from the end fit in one list, so such a list never reaches the item cap.
+- The Rust examples in `README.md` run as doctests. `src/lib.rs` attaches the file as the documentation of a private item that exists only under `cfg(all(doctest, feature = "jiff"))`. The crate documentation stays separate from the README, because the README links to repository files that docs.rs cannot show. The item needs the `jiff` feature because most README examples call `upcoming`. `#![cfg_attr(doctest, doc = include_str!(...))]` would avoid the item, but `scripts/check-security.sh` rejects `cfg_attr` in `src/`. The README examples cannot use hidden `#` lines, because GitHub and crates.io show those lines. Each example is a whole program with its own `fn main`.
 - The search queries in `model`, such as `Component::next_at_or_after` and `DaySpec::mask`, are compiled only with the `jiff` feature, because only `next` calls them.
 
 ## Known differences from systemd

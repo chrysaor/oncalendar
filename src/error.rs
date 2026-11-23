@@ -43,6 +43,13 @@ pub(crate) enum ErrorKind {
 ///
 /// The message is a fixed phrase plus a byte offset. It never contains any part of the input, so
 /// it is safe to write to a log.
+///
+/// ```
+/// use oncalendar::CalendarEvent;
+///
+/// let error = "daily\nforged log line".parse::<CalendarEvent>().unwrap_err();
+/// assert_eq!(error.to_string(), "calendar expression: invalid weekday at byte 0");
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParseError {
     kind: ErrorKind,
@@ -57,6 +64,15 @@ impl ParseError {
     /// The byte offset in the input where the problem starts.
     ///
     /// It is never greater than the input length and always lies on a character boundary.
+    ///
+    /// ```
+    /// use oncalendar::CalendarEvent;
+    ///
+    /// let input = "Mon *-*-* 24:00";
+    /// let error = input.parse::<CalendarEvent>().unwrap_err();
+    /// assert_eq!(error.offset(), 10);
+    /// assert_eq!(&input[error.offset()..], "24:00");
+    /// ```
     pub fn offset(&self) -> usize {
         self.offset
     }
