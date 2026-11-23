@@ -86,7 +86,7 @@ Run every gate:
 scripts/verify gates
 ```
 
-The gates are formatting, the comment check, clippy on every feature combination, the tests with the lowest allowed dependency versions, the package check, the CI configuration check, the tests, the security gate, the weight gate, the `no_std` build, the command-line tool check, and the oracle check. Each gate is also a script that runs on its own:
+The gates are formatting, the comment check, clippy on every feature combination, the tests with the lowest allowed dependency versions, the package check, the CI configuration check, the tests, the security gate, the weight gate, the `no_std` build, the command-line tool check, the WebAssembly build and its fixture check, and the oracle check. Each gate is also a script that runs on its own:
 
 | Gate | Command |
 | --- | --- |
@@ -100,6 +100,7 @@ The gates are formatting, the comment check, clippy on every feature combination
 | Dependency count | `scripts/check-weight.sh` |
 | `no_std` build | `scripts/check-no-std.sh` |
 | Command-line tool in `cli/` | `scripts/check-cli.sh` |
+| WebAssembly build and fixtures | `scripts/check-wasm.sh` |
 | Fixtures match systemd | `oracle/check.sh` |
 
 Check that the documentation builds and that its examples run. The examples in `README.md` run as tests too.
@@ -119,11 +120,15 @@ scripts/fuzz.sh 60
 
 A failing input is saved under `fuzz/artifacts/<target>/`.
 
-If you add a file that belongs in the published crate, add it to `include` in `Cargo.toml` and to the allow list in `scripts/check-package.sh`. For the command-line tool, the include list is in `cli/Cargo.toml` and the allow list in `scripts/check-cli.sh`.
+If you add a file that belongs in the published crate, add it to `include` in `Cargo.toml` and to the allow list in `scripts/check-package.sh`. For the command-line tool, the include list is in `cli/Cargo.toml` and the allow list in `scripts/check-cli.sh`. Files under `wasm/` never belong in either package.
 
 ## The command-line tool
 
 `cli/` is a separate crate, `oncalendar-cli`, with its own `[workspace]`. Run its tests with `cargo test --manifest-path cli/Cargo.toml`. They run the executable against every row of `tests/fixtures/expected.tsv` and rerun the examples in `cli/README.md` and `README.md`, so a change to an example's output means a change to the README text. The tool uses only the public API of the library, at the version in `cli/Cargo.toml`. The design is under "Command-line tool" in [docs/architecture.md](docs/architecture.md#command-line-tool).
+
+## The WebAssembly crate
+
+The WebAssembly crate in `wasm/` follows the same rules as the library, with one exception: its exported functions carry `#[unsafe(no_mangle)]`. `scripts/check-wasm.sh` rejects any other `unsafe`. To try the demo page, run `scripts/check-wasm.sh`, then serve `wasm/demo/` with any static file server, such as `python3 -m http.server --directory wasm/demo 8000`.
 
 ## Tools
 
@@ -132,6 +137,8 @@ If you add a file that belongs in the published crate, add it to `include` in `C
 | Rust stable with `rustfmt` and `clippy` | everything | `rustup component add rustfmt clippy` |
 | Rust 1.85 | the MSRV check in CI | `rustup toolchain install 1.85` |
 | `thumbv7em-none-eabihf` target | `scripts/check-no-std.sh` | `rustup target add thumbv7em-none-eabihf` |
+| `wasm32-unknown-unknown` target | `scripts/check-wasm.sh` | `rustup target add wasm32-unknown-unknown` |
+| Node.js 18 or later | `scripts/check-wasm.sh` | [nodejs.org](https://nodejs.org/) or your package manager |
 | Docker | `oracle/run.sh`, `oracle/check.sh`, `verify` | A running Docker daemon |
 | `cargo-deny` | `scripts/check-security.sh` | `cargo install cargo-deny --locked` |
 | `cargo-hack` 0.6.46 | `scripts/check-features.sh`, `scripts/check-minimal-versions.sh` | `cargo install cargo-hack --locked` |
@@ -140,7 +147,7 @@ If you add a file that belongs in the published crate, add it to `include` in `C
 | `zizmor` 1.33.1 | `scripts/check-workflows.sh` | `pipx install zizmor==1.33.1` |
 | Nightly Rust and `cargo-fuzz` 0.13.2 | `scripts/fuzz.sh` | `rustup toolchain install nightly` and `cargo install cargo-fuzz --locked` |
 
-The versions are the ones CI installs. `scripts/verify doctor` checks cargo, Docker, the oracle, `cargo-deny`, `cargo-hack`, `cargo-minimal-versions`, `actionlint`, and `zizmor`.
+The versions are the ones CI installs. `scripts/verify doctor` checks cargo, Docker, the oracle, `cargo-deny`, `cargo-hack`, `cargo-minimal-versions`, `actionlint`, `zizmor`, the `wasm32-unknown-unknown` target, and Node.js.
 
 ## Pull requests
 

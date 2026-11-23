@@ -736,6 +736,97 @@ The crate's own code never reads the environment. `clippy.toml` lists `std::env:
 
 `scripts/check-weight.sh` gates the number of crates in the normal dependency graph and reports the cold build time and the rlib size. Build time and size are reported, not gated, because they depend on the machine. The script counts two configurations. The limit is 0 without default features and 2 with them (`jiff` and `jiff-core`, as resolved on a Unix host). It also counts the crates of the command-line tool, with a limit of 4, and reports the size of its stripped release executable. A failing `cargo tree` fails the gate.
 
+## WebAssembly build and demo page
+
+`wasm/` is a separate crate, `oncalendar-wasm`, that compiles the library for `wasm32-unknown-unknown` as a `cdylib`. `wasm/demo/` is a static page that uses it. The crate exists for two reasons: a gate that proves the library builds and gives systemd's answers on WebAssembly, and a page where a user can try an expression without installing anything.
+
+The library itself does not change for WebAssembly. The crate depends on it with `default-features = false` and the `jiff` feature, and on jiff with `alloc` and `tzdb-bundle-always`. A browser has no time zone files, so the module carries jiff's bundled database and passes it to `upcoming_with`.
+
+Like `fuzz/`, the crate has its own `[workspace]`, so the library's `cargo tree` and `cargo package` do not see it. It sets `publish = false`. The library's `include` list leaves `wasm/` out of the package, and `scripts/check-package.sh` compares the packaged files with an exact list, so a demo file cannot reach crates.io.
+
+### Interface
+
+The module exports five functions and its memory, and imports nothing.
+
+| Export | What it does |
+| --- | --- |
+| `input_buffer()`, `input_capacity()` | The address and size (64 KiB) of the request buffer |
+| `output_buffer()` | The address of the response buffer (128 KiB) |
+| `evaluate(len, count)` | Reads a request of `len` bytes, writes the response, and returns the response length. `count` is capped at 100. |
+| `zones()` | Writes the sorted names in the bundled database, one per line, and returns the length |
+
+A request has the shape of a row of `tests/fixtures/cases.tsv`: the local time zone, the base time, and the expression, separated by tabs. The base time is a civil time and a zone name, such as `2026-01-01 00:00:00 UTC`. The first line of the response is one of these:
+
+| First line | Meaning |
+| --- | --- |
+| `ok`, normalized form | The expression parsed and the zones resolved. One line per elapse follows: the instant in RFC 3339 UTC, a tab, and the civil time in the local zone with its abbreviation. |
+| `invalid`, byte offset, message | `parse` failed. The offset and the message come from `ParseError`. |
+| `unknown-zone`, normalized form, message | `upcoming_with` returned `UnknownTimeZone`. |
+| `bad-request`, message | The request was not valid UTF-8, did not fit, had fewer than three fields, or named a local zone or base time the module cannot read. |
+
+The fields are separated by tabs. No normalized form, zone name, or message contains a tab or a newline, so the format needs no escaping. The response repeats only the normalized form, never the input. The largest normalized form is under 46 KB (the bound in `tests/robustness.rs`), so a response with 100 elapses fits in the output buffer.
+
+`wasm/demo/oncalendar.mjs` is the JavaScript side: it writes the request with `TextEncoder`, calls `evaluate`, and decodes the response into an object. The demo page and the gate both use this file, so the gate also tests the code the page runs.
+
+### Plain exports instead of wasm-bindgen
+
+`wasm-bindgen` generates the glue between Rust and JavaScript. Both designs were built and measured with the same Rust code behind the exports (Rust 1.99, `opt-level = "z"`, LTO, one codegen unit, `panic = "abort"`, symbols stripped):
+
+| | Plain `extern "C"` exports | `wasm-bindgen` 0.2.129 |
+| --- | --- | --- |
+| Crates in the normal graph besides `oncalendar` | 3: `jiff`, `jiff-core`, `jiff-tzdb` | 14: the same 3, plus `wasm-bindgen`, its macro and support crates, `syn`, `quote`, `proc-macro2`, `unicode-ident`, `bumpalo`, `once_cell`, and `cfg-if` |
+| Tools besides cargo | none | `wasm-bindgen-cli`, at exactly the version of the crate |
+| Module size | 545,297 bytes | 545,526 bytes |
+| JavaScript glue | 1,584 bytes, written by hand | 7,548 bytes, generated |
+| `unsafe` in the crate | `#[unsafe(no_mangle)]` on the five exports | none. `#![forbid(unsafe_code)]` compiles. |
+
+The plain exports win on weight and tooling, and the module sizes are the same. The cost is the `unsafe` attribute. Edition 2024 requires `#[unsafe(no_mangle)]` to export a symbol, and the `unsafe_code` lint rejects it, so the crate cannot forbid `unsafe_code`. It keeps the attribute as the only `unsafe` in the crate:
+
+- The two buffers are `static` arrays of `AtomicU8`. JavaScript writes the request into the input buffer and reads the response from the output buffer between calls. Rust reads and writes them with atomic loads and stores. No code dereferences a raw pointer, so the crate has no `unsafe` block.
+- `scripts/check-wasm.sh` fails when `unsafe` appears in `wasm/src` anywhere except a `#[unsafe(no_mangle)]` line.
+
+### Size
+
+Each size was measured once. Two separate builds of the shipped module gave the same bytes. Each row is the configuration above on the plain exports. The first two rows are prototype crates with smaller exports: the first parses and prints, and the second also lists elapses in UTC without a database.
+
+| Configuration | Module | With `gzip -9` |
+| --- | --- | --- |
+| Parse and normalize only, no `jiff` | 68,692 bytes | 19,599 bytes |
+| Also elapses, jiff without a database | 261,629 bytes | 83,583 bytes |
+| Also the bundled database: the shipped module | 545,297 bytes | 175,624 bytes |
+
+The bundled database and the zone lookups add about 280 KB. Most of the module is jiff, so a smaller module would need a smaller database, not a different binding.
+
+Two settings in `wasm/` shrink the module:
+
+- `opt-level = "z"` instead of `"s"`: 652,622 to 574,825 bytes.
+- `--compress-relocations`, passed to the linker in `wasm/.cargo/config.toml`: 574,825 to 545,297 bytes. Without it, the linker writes each function and global index in the code as a five-byte number. The `wasm-bindgen` post-processing step rewrites the module and removes the same padding, which is why its output first looked 29 KB smaller.
+
+`wasm/.cargo/config.toml` also sets the build target, so `cargo build --release` in `wasm/` builds the module. Cargo reads that file only when it runs inside `wasm/`.
+
+With Rust 1.85 the module is 567,771 bytes and passes the same fixture check.
+
+### The demo page
+
+`wasm/demo/` holds `index.html`, `demo.css`, `demo.mjs`, and `oncalendar.mjs`. `scripts/check-wasm.sh` copies the built module there as `oncalendar.wasm`, which `.gitignore` keeps out of the repository. The page needs a static file server, because browsers do not fetch WebAssembly from a `file://` page.
+
+- A `Content-Security-Policy` in the page allows scripts, styles, and fetches from the page's own origin only, and WebAssembly compilation through `'wasm-unsafe-eval'`. The page cannot load a CDN, a font, or a tracker, and has no inline script or style.
+- The page puts the input and every result into the document with `textContent`. It never sets `innerHTML`.
+- The library reports a byte offset. The page converts it to a character position by decoding the bytes before the offset, so a multibyte character before an error does not move the mark.
+- The expression and the zone live in the URL fragment, so a link opens the same check. The browser does not send the fragment to the server.
+- The base time is the current time, and the page computes the elapses again every 30 seconds while it is visible.
+
+### The gate
+
+`scripts/check-wasm.sh` fails when the `wasm32-unknown-unknown` target or Node.js is missing. Then it:
+
+1. Checks the `unsafe` rule above.
+2. Runs `cargo fmt --check` and clippy with warnings denied on the crate. The crate has the panic lints of the library.
+3. Builds the module, gates the dependency count at 3 besides `oncalendar`, and reports the size.
+4. Runs `wasm/check-fixtures.mjs` in Node.js. It sends every row of `tests/fixtures/expected.tsv` through `oncalendar.mjs` and the module and applies the rules of `tests/oracle.rs`: the status, the normalized form, and the elapses cut to whole seconds. An `unresolved` row needs only a successful parse.
+
+The size is reported, not gated, like the sizes in [Weight budget](#weight-budget). The `msrv` job in CI builds the module with Rust 1.85 and runs the fixture check on it. Rust 1.85 has no clippy or rustfmt in that job, so the whole script runs on stable only.
+
 ## Verification
 
 ### The oracle
@@ -833,6 +924,7 @@ Computation:
 - `scripts/check-features.sh` runs clippy with warnings denied on every feature combination (`cargo hack --feature-powerset`).
 - `scripts/check-minimal-versions.sh` resolves every dependency to its lowest allowed version (`cargo minimal-versions`) and runs the tests with all features. `Cargo.lock` is restored afterwards.
 - `scripts/check-package.sh` compares `cargo package --list` with an allow list in the script and then builds the packaged crate.
+- `scripts/check-wasm.sh` builds the library for WebAssembly and checks every fixture row through the module in Node.js. See [The gate](#the-gate).
 - `scripts/check-workflows.sh` runs `actionlint` and `zizmor` on `.github/`.
 - `scripts/check-cli.sh` checks the command-line tool in `cli/`: formatting, clippy with warnings denied, the lint switches in `cli/src/`, the tests, the packaged files against an allow list, and a build of the packaged tool against the library release on crates.io.
 - `scripts/fuzz.sh <seconds> [target...]` runs each `cargo-fuzz` target in `fuzz/` for the given time, seeded with the expressions in `tests/fixtures/cases.tsv`.
@@ -841,14 +933,14 @@ Computation:
 - `.github/workflows/ci.yml` runs on every push to `main` and every pull request:
   - `lint` (Linux): format, the comment check, the feature powerset, docs, the `no_std` build, and the package check.
   - `test`: the tests in both feature configurations and the tests of the command-line tool, on Linux, macOS, and Windows.
-  - `msrv` (Linux): check, the `no_std` build, the minimal-versions tests, and a build of the command-line tool on 1.85.
+  - `msrv` (Linux): check, the `no_std` build, the minimal-versions tests, a build of the command-line tool, and the WebAssembly build with its fixture check on 1.85.
   - `cli` (Linux): `scripts/check-cli.sh`.
-  - `security`, `weight`, `oracle`, and `workflows` (Linux).
+  - `wasm`, `security`, `weight`, `oracle`, and `workflows` (Linux).
   - `fuzz` (Linux): 60 seconds per fuzz target.
 - `.github/workflows/weekly.yml` runs on Monday mornings (UTC) and on demand, even when no code changed: `cargo deny check advisories`, a fresh build of the oracle image with `oracle/check.sh`, and 30 minutes per fuzz target.
 - `.github/dependabot.yml` asks for weekly updates of `Cargo.lock`, `cli/Cargo.lock`, and the pinned actions.
 
-What runs where is decided by running time. `verify gates` holds the checks that finish in seconds on a warm cache: the feature powerset, minimal versions, the package check, and the workflow check each took between 0.2 and 1.9 s (measured), and the whole of `verify gates` took about 15 s. The operating system matrix needs other machines, and fuzzing needs minutes to be worth running, so both are in CI only. Run `scripts/fuzz.sh 60` by hand after changing the parser or the search.
+What runs where is decided by running time. `verify gates` holds the checks that finish in seconds on a warm cache: the feature powerset, minimal versions, the package check, and the workflow check each took between 0.2 and 1.9 s (measured), the WebAssembly check took 0.5 s (measured), and the whole of `verify gates` took about 15 s. The operating system matrix needs other machines, and fuzzing needs minutes to be worth running, so both are in CI only. Run `scripts/fuzz.sh 60` by hand after changing the parser or the search.
 
 ### Tooling notes
 
@@ -863,6 +955,7 @@ The repository carries no code comments (see `CLAUDE.md`), so the reasons behind
 - The pins carry no version comment, because configuration carries no comments. `zizmor --persona pedantic` reports that as `ref-version-mismatch`. The default persona reports nothing.
 - CI installs its tools at fixed versions instead of through another action: `cargo-hack` 0.6.46, `cargo-minimal-versions` 0.1.39, and `cargo-fuzz` 0.13.2 with `cargo install --locked`, `actionlint` 1.7.12 with `go install`, and `zizmor` 1.33.1 with `pipx`. These are the versions the checks were first run with. The `workflows` job passes the job token to `zizmor` so that its online audits run.
 - Shell scripts, Docker, and the weight limit stay on Linux. The weight limit of 2 holds only for a Unix host, and the oracle needs Docker. On Windows, jiff finds no system zoneinfo and uses the database that `tzdb-bundle-platform` compiles in. The tests do not notice, because they read the bundled database. They also pass with every fixture and source file converted to CRLF line endings, as a Windows checkout may do (measured on macOS).
+- `wasm/` is a separate crate with its own `[workspace]` for the same reasons as `fuzz/`. `wasm/Cargo.lock` is committed. `cargo deny` runs on the library only, and the crate adds no dependency that the library's dev-dependencies do not already have.
 - `fuzz/` is a separate crate with its own `[workspace]`, so it is not a member of this crate's build, `cargo tree` does not count its dependencies, and the `include` list keeps it out of the package. `fuzz/Cargo.lock` is committed so that CI fuzzes with the same `libfuzzer-sys`. Dependabot does not update it.
 - The fuzz targets: `parse_roundtrip` parses any UTF-8 input and, when it is accepted, checks that the normalized form parses to the same event and prints the same text. `upcoming` takes a base time, a local zone from a short list of zones with daylight saving changes plus the extreme fixed offsets, and an expression, calls `upcoming_with` with the bundled database, and checks that up to 16 results each lie strictly after the one before, starting from the base time. A base time of zero bytes means 2026-01-01 UTC, so the seeds from the fixtures start in the years the fixtures use. Each input has 10 s before libFuzzer reports it as a hang.
 - A failing fuzz input is saved under `fuzz/artifacts/<target>/`. libFuzzer also prints it in base64 in the log, which is how a CI failure can be reproduced: decode it to a file and run `cargo +nightly fuzz run <target> <file>`.

@@ -17,6 +17,7 @@ A user who adds this crate pays for it in dependencies, build time, and binary s
 - `workflows` passes `actionlint` and `zizmor`.
 - `no-std` builds the library for a target without `std`.
 - `cli` passes the command-line tool's lints and tests, and builds the packaged tool against the published library.
+- `wasm` builds the library for WebAssembly, limits that crate's dependencies, and runs every fixture row through the module in Node.js.
 - `weight-cli` keeps the command-line tool within its own dependency limit.
 
 ## How to get to it (user POV)
@@ -34,7 +35,7 @@ Preconditions:
 - **Weight alone.** Run `scripts/check-weight.sh`. It prints the dependency count against its limit for each configuration and ends with `weight gate: PASS`.
 - **Security alone.** Run `scripts/check-security.sh`. Its three steps complete and it ends with `security gate: PASS`.
 - **Drift alone.** Run `oracle/check.sh`. It prints `oracle: expected.tsv matches systemd ...`.
-- **The other gates alone.** Run `scripts/check-features.sh`, `scripts/check-minimal-versions.sh`, `scripts/check-package.sh`, `scripts/check-workflows.sh`, `scripts/check-no-std.sh`, or `scripts/check-cli.sh`. Each ends with a `PASS` line.
+- **The other gates alone.** Run `scripts/check-features.sh`, `scripts/check-minimal-versions.sh`, `scripts/check-package.sh`, `scripts/check-workflows.sh`, `scripts/check-no-std.sh`, `scripts/check-cli.sh`, or `scripts/check-wasm.sh`. Each ends with a `PASS` line.
 - **Proof.** Quote the PASS lines and the evidence directory that `verify gates` prints. For a weight claim, also quote the dependency counts from `weight.txt`.
 
 ## Gotchas
