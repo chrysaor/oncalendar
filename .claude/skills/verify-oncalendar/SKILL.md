@@ -22,7 +22,7 @@ There is no server. Launch means building two things, and the helper does both o
 - the probe, a crate outside the library that depends on it by path (`.claude/skills/verify-oncalendar/probe/`)
 - the oracle image, Debian with systemd, base image pinned by digest and packages by version (`oracle/Dockerfile`)
 
-Requirements: `cargo`, a running Docker daemon, `cargo-deny`. On macOS with colima, run `colima start` first. Ready means `verify doctor` exits 0.
+Requirements: `cargo`, a running Docker daemon, `cargo-deny`, and the `thumbv7em-none-eabihf` target for the `no_std` gate. On macOS with colima, run `colima start` first. Ready means `verify doctor` exits 0.
 
 ## Doctor
 
@@ -61,7 +61,7 @@ The gates:
 .claude/skills/verify-oncalendar/bin/verify gates
 ```
 
-It runs formatting, the tests in both feature configurations, `scripts/check-security.sh`, `scripts/check-weight.sh`, and `oracle/check.sh`, and prints PASS or FAIL per gate.
+It runs formatting, the tests in both feature configurations, `scripts/check-security.sh`, `scripts/check-weight.sh`, `scripts/check-no-std.sh`, and `oracle/check.sh`, and prints PASS or FAIL per gate.
 
 Each row has six tab-separated columns: zone, base time, expression, status, the normalized expression, and up to five elapses in UTC (or `never`). Status `error` means the expression was rejected. Status `unresolved` appears only on the systemd side: systemd parsed the expression and then gave up computing an elapse. For such a row the helper compares acceptance only, and `summary.txt` counts it separately.
 
@@ -103,7 +103,7 @@ Removes the probe's build output (`target/verify-probe`). It keeps `.verify/`. O
 - `bin/verify` is the only entry point. `verify` with no argument prints its usage.
 - `probe/` is the consumer crate. It prints rows in the oracle's format so that the two outputs diff cleanly.
 - `oracle/run.sh [ITERATIONS] < cases.tsv` is the raw oracle. `oracle/check.sh` fails when `tests/fixtures/expected.tsv` no longer matches systemd.
-- `scripts/check-weight.sh` and `scripts/check-security.sh` are the gates. Both run standalone.
+- `scripts/check-weight.sh`, `scripts/check-security.sh`, and `scripts/check-no-std.sh` are the gates. Each runs standalone. The `no_std` gate fails when `thumbv7em-none-eabihf` is not installed (`rustup target add thumbv7em-none-eabihf`).
 
 ## Rules that bound verification
 

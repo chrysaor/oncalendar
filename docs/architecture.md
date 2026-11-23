@@ -19,7 +19,6 @@ Out of scope for v0.1:
 - The rest of the systemd time syntax: timestamps such as `now`, `+3h`, and `@1700000000`, and time spans.
 - Timer unit files.
 - Local time zone abbreviations in expressions, such as `KST` or `EST`. See [Known differences from systemd](#known-differences-from-systemd).
-- `no_std`. The modules `model`, `parse`, and `format` use only `core` and `alloc`, so `no_std` support can come later without a redesign.
 - A syntax tree that keeps the input spelling, `serde` support, builders, and accessors for the parts of an expression.
 
 ## Sources of truth and the clean-room rule
@@ -198,7 +197,7 @@ impl ParseError {
 	pub fn offset(&self) -> usize;
 }
 impl core::fmt::Display for ParseError { /* fixed text and the offset */ }
-impl std::error::Error for ParseError {}
+impl core::error::Error for ParseError {}
 
 #[cfg(feature = "jiff")]
 impl CalendarEvent {
@@ -232,7 +231,7 @@ pub struct UnknownTimeZone { /* private */ }     // Clone, Debug, PartialEq, Eq
 #[cfg(feature = "jiff")]
 impl core::fmt::Display for UnknownTimeZone {}
 #[cfg(feature = "jiff")]
-impl std::error::Error for UnknownTimeZone {}
+impl core::error::Error for UnknownTimeZone {}
 ```
 
 Each task has exactly one way to do it:
@@ -293,6 +292,14 @@ jiff = { version = "1", optional = true, default-features = false, features = ["
 - jiff appears in the public API through `jiff::Timestamp` and `jiff::tz::TimeZone`. A new jiff major version therefore means a new `oncalendar` minor version while the crate is at 0.x.
 
 MSRV is 1.85 with edition 2024. jiff 1.0.2 declares `rust-version = "1.85"`.
+
+### `no_std`
+
+The crate is `#![no_std]` and links `alloc` in every configuration, with no `std` or `alloc` feature. It needs a global allocator, because a parsed expression holds its lists in `Vec` and a zone name in `Box<str>`. The error types implement `core::error::Error`, which is stable since Rust 1.81, below the MSRV.
+
+Without default features the crate builds for `thumbv7em-none-eabihf`, a target with no `std`. With the `jiff` feature the crate itself is still `no_std`, but jiff's `tzdb-zoneinfo` feature turns on jiff's `std` feature, so that build needs a target with `std`. With jiff's features reduced to `alloc`, the `jiff` feature also builds for `thumbv7em-none-eabihf` on the current toolchain and on 1.85 (measured once, not gated). That configuration would have no system time zone database, so `upcoming` would find no named zone. It is not offered.
+
+The unit test in `next` declares `extern crate std` inside its test module to print its report. `#![cfg_attr(not(test), no_std)]` would do the same at the crate root, but `scripts/check-security.sh` rejects `cfg_attr` in `src/`.
 
 Reasons for the split:
 
@@ -793,8 +800,9 @@ Computation:
 
 - `scripts/check-security.sh` checks that `Cargo.toml` still forbids `unsafe` code, runs clippy with the deny lints, runs `cargo deny check`, and runs `tests/robustness.rs`. It also fails when `src/` switches a lint off, and through `clippy.toml` when library code calls a method that reads the environment or the system time zone.
 - `scripts/check-weight.sh` is described under [Weight budget](#weight-budget).
+- `scripts/check-no-std.sh` builds the crate without default features for `thumbv7em-none-eabihf`. It fails, rather than skips, when that target is not installed for the active toolchain. Set `RUSTUP_TOOLCHAIN` to run it on another toolchain.
 - `deny.toml` allows only the MIT license, which every dependency offers, and bans duplicate crate versions.
-- `.github/workflows/ci.yml` runs four jobs: `test` (format, clippy, tests, docs), `security`, `weight`, and `oracle`.
+- `.github/workflows/ci.yml` runs five jobs: `test` (format, clippy, tests, docs, the `no_std` build), `msrv` (check and the `no_std` build on 1.85), `security`, `weight`, and `oracle`. The `test` and `msrv` jobs install `thumbv7em-none-eabihf` with their toolchain.
 
 ### Tooling notes
 

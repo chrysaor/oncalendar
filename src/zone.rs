@@ -24,7 +24,7 @@ impl fmt::Display for UnknownTimeZone {
     }
 }
 
-impl std::error::Error for UnknownTimeZone {}
+impl core::error::Error for UnknownTimeZone {}
 
 /// The zone the search runs in. A named zone must match a name in `database` exactly, case
 /// included.

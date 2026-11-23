@@ -421,6 +421,10 @@ fn weekday_mask(weekdays: WeekdaySet, first: Date, len: u32) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
+    extern crate std;
+
+    use std::println;
+
     use super::*;
 
     const EXPECTED: &str = include_str!("../tests/fixtures/expected.tsv");

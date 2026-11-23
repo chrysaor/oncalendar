@@ -51,6 +51,8 @@ These numbers come from small prototypes, not from this crate. See [docs/archite
 
 MSRV is Rust 1.85, edition 2024.
 
+The crate is `#![no_std]` and needs `alloc`, so it runs on embedded targets that have a global allocator. With `default-features = false` it builds for targets without `std`, such as `thumbv7em-none-eabihf`. The `jiff` feature needs a target with `std`, because it reads the system time zone database.
+
 ## Known differences from systemd
 
 - An unknown time zone name, such as `daily Nowhere/Bogus`, parses. `upcoming` then returns `UnknownTimeZone`. systemd rejects it at parse time.
@@ -70,6 +72,7 @@ MSRV is Rust 1.85, edition 2024.
 - `tests/robustness.rs` checks that hostile input never panics, never loops, and never echoes into error messages.
 - `scripts/check-security.sh` runs the no-`unsafe` and panic lints, `cargo deny`, and the robustness tests.
 - `scripts/check-weight.sh` gates the dependency count and reports build time and size.
+- `scripts/check-no-std.sh` builds the crate without default features for `thumbv7em-none-eabihf`.
 
 ## Contributing
 

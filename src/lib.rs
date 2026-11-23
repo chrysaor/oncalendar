@@ -16,11 +16,17 @@
 //!   a time zone database the caller chooses, such as jiff's bundled one.
 //!
 //! Without the `jiff` feature the crate parses and normalizes only and has no dependencies.
+//! The crate is `no_std` and needs `alloc`. Without the `jiff` feature it builds for targets
+//! without `std`.
 //! Parsing never touches the file system. A time zone name in an expression is checked for its
 //! form when parsing and looked up in the time zone database when `CalendarEvent::upcoming` or
 //! `CalendarEvent::upcoming_with` runs.
 //!
 //! [`Display`]: core::fmt::Display
+
+#![no_std]
+
+extern crate alloc;
 
 mod error;
 mod format;
