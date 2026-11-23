@@ -1,0 +1,19 @@
+# cargo-deny policy. Run with: cargo deny --all-features check
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+# Every dependency must be usable under the crate's own terms without extra obligations.
+# jiff and its tz database crates are "Unlicense OR MIT"; this crate is "MIT OR Apache-2.0".
+allow = ["MIT"]
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

@@ -1,0 +1,12 @@
+[package]
+name = "oncalendar-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# An empty table keeps this crate out of any enclosing workspace.
+[workspace]
+
+[dependencies]
+oncalendar = { path = "../../../.." }
+jiff = { version = "1", default-features = false, features = ["std", "tzdb-zoneinfo", "tzdb-bundle-platform"] }

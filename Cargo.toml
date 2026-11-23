@@ -1,0 +1,45 @@
+[package]
+name = "oncalendar"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Parse systemd calendar event expressions (OnCalendar=) and compute when they elapse next."
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = ["systemd", "calendar", "timer", "schedule", "parser"]
+categories = ["date-and-time", "parser-implementations"]
+# An allow list: a stray file in the checkout must never reach crates.io.
+include = ["/src", "/tests", "/README.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
+
+[features]
+default = ["jiff"]
+# Adds `CalendarEvent::upcoming`. Without it the crate parses and normalizes only, with no dependencies.
+jiff = ["dep:jiff"]
+
+[dependencies]
+jiff = { version = "1", default-features = false, features = ["std", "tzdb-zoneinfo", "tzdb-bundle-platform"], optional = true }
+
+[dev-dependencies]
+# The tests' own zone lookups use the bundled database. A zone named inside an expression is still
+# looked up by the library through jiff, which prefers the host's zoneinfo.
+jiff = { version = "1", default-features = false, features = ["std", "tzdb-bundle-always"] }
+
+# The input is untrusted text, so the library must not panic and must not use unsafe code.
+# These lints turn each of those rules into a build failure.
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+unreachable = "deny"
+todo = "deny"
+unimplemented = "deny"
+indexing_slicing = "deny"
+string_slice = "deny"
+arithmetic_side_effects = "deny"
+cast_possible_truncation = "deny"
+cast_possible_wrap = "deny"
+cast_sign_loss = "deny"
