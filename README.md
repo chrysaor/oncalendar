@@ -1,5 +1,9 @@
 # oncalendar
 
+[![crates.io](https://img.shields.io/crates/v/oncalendar.svg)](https://crates.io/crates/oncalendar)
+[![docs.rs](https://docs.rs/oncalendar/badge.svg)](https://docs.rs/oncalendar)
+[![CI](https://github.com/chrysaor/oncalendar/actions/workflows/ci.yml/badge.svg)](https://github.com/chrysaor/oncalendar/actions/workflows/ci.yml)
+
 `oncalendar` is a Rust library for systemd calendar event expressions, the values you write in `OnCalendar=` in a timer unit. It parses an expression, prints the normalized form that `systemd-analyze calendar` prints, and lists the instants when the expression elapses after a given time, in a given time zone, with systemd's daylight saving time behavior. The expected results in the tests come from the real `systemd-analyze calendar` in a pinned container. The library matches them on every row where systemd gives an answer.
 
 ## Install
