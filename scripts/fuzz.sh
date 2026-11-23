@@ -17,11 +17,15 @@ fi
 
 seeds=$(mktemp -d)
 trap 'rm -rf "$seeds"' EXIT
-mkdir "$seeds/parse_roundtrip" "$seeds/upcoming"
+mkdir "$seeds/parse_roundtrip" "$seeds/upcoming" "$seeds/from_cron"
 grep -v -e '^#' -e '^$' tests/fixtures/cases.tsv | cut -f 3 | sort -u | awk '{ print NR "\t" $0 }' |
 	while IFS="$(printf '\t')" read -r number expression; do
 		printf '%s' "$expression" > "$seeds/parse_roundtrip/$number"
 		{ printf '\000\000\000\000\000\000\000\000\000\000\000\000\000\000'; printf '%s' "$expression"; } > "$seeds/upcoming/$number"
+	done
+grep -v -e '^#' -e '^$' tests/fixtures/cron.tsv | cut -f 1 | sort -u | awk '{ print NR "\t" $0 }' |
+	while IFS="$(printf '\t')" read -r number expression; do
+		printf '%s' "$expression" > "$seeds/from_cron/$number"
 	done
 
 fail=0

@@ -12,6 +12,8 @@ The crate does three things with a systemd calendar event expression, the value 
 2. Print its normalized form, byte for byte as `systemd-analyze calendar` prints it.
 3. List the instants when it elapses after a given instant, in a given local time zone, with the same daylight saving time behavior as systemd.
 
+With the `cron` feature it also converts a five-field cron schedule into calendar events that elapse at the same minutes, for users who move cron jobs to systemd timers. See [Cron conversion](#cron-conversion).
+
 The crate must stay light. The parser and the normalized output have no dependencies. Hostile input must never make the crate panic, loop forever, or use memory in proportion to the input.
 
 Out of scope for v0.1:
@@ -219,6 +221,24 @@ impl CalendarEvent {
 	) -> Result<Upcoming<'_>, UnknownTimeZone>;
 }
 
+#[cfg(feature = "cron")]
+impl CalendarEvent {
+	/// The calendar events that elapse at the minutes the cron schedule runs.
+	/// One event, or two when both day fields are restricted.
+	pub fn from_cron(input: &str) -> Result<Vec<CalendarEvent>, CronError>;
+}
+
+#[cfg(feature = "cron")]
+pub struct CronError { /* private */ }           // Clone, Debug, PartialEq, Eq
+#[cfg(feature = "cron")]
+impl CronError {
+	pub fn offset(&self) -> usize;
+}
+#[cfg(feature = "cron")]
+impl core::fmt::Display for CronError {}
+#[cfg(feature = "cron")]
+impl core::error::Error for CronError {}
+
 #[cfg(feature = "jiff")]
 pub struct Upcoming<'a> { /* private */ }        // Clone, Debug
 #[cfg(feature = "jiff")]
@@ -244,6 +264,7 @@ Each task has exactly one way to do it:
 | Next elapse | `event.upcoming(after, &local)?.next()` |
 | Several elapses | `event.upcoming(after, &local)?.take(n)` |
 | Elapses with a chosen zone database | `event.upcoming_with(after, &local, &database)?` |
+| Convert a cron schedule (feature `cron`) | `CalendarEvent::from_cron(s)?` |
 
 Left out on purpose:
 
@@ -276,6 +297,8 @@ The core has no dependencies. It holds the parser, the model, and the normalized
 
 The feature `jiff` adds `upcoming`, `upcoming_with`, `Upcoming`, and `UnknownTimeZone`. It asks jiff for `alloc` only, so it works without `std`. The feature `system-tzdb` turns on `jiff` and the jiff features that read the system time zone database. It is the default. With `default-features = false` the crate parses and normalizes, and compiles no other crate.
 
+The feature `cron` adds `CalendarEvent::from_cron` and `CronError`. It depends on nothing, not even `jiff`, and is off by default, because most users parse expressions that already are calendar events. `[package.metadata.docs.rs]` sets `all-features = true`, so the published documentation shows it.
+
 The two are separate so that an embedded target can compute elapses. Such a target usually runs on UTC or a fixed offset and has no time zone files. A second search written without jiff was rejected: the `jiff` feature adds about 8 KB of code on `thumbv7em-none-eabihf` (31,378 to 39,635 bytes of `.text`, measured once with `opt-level = "z"`, LTO, and `panic = "abort"`, built but not run on a device), and one search stays the only one to verify. jiff's bundled database adds about 253 KB on top, so it stays the caller's choice.
 
 Manifest entries:
@@ -283,6 +306,7 @@ Manifest entries:
 ```toml
 [features]
 default = ["system-tzdb"]
+cron = []
 jiff = ["dep:jiff"]
 system-tzdb = ["jiff", "jiff/std", "jiff/tzdb-zoneinfo", "jiff/tzdb-bundle-platform"]
 
@@ -302,7 +326,7 @@ The requirement `jiff = "1"` stays as it is. Its lowest version, jiff 1.0.0, bui
 
 The crate is `#![no_std]` and links `alloc` in every configuration, with no `std` or `alloc` feature. It needs a global allocator, because a parsed expression holds its lists in `Vec` and a zone name in `Box<str>`. The error types implement `core::error::Error`, which is stable since Rust 1.81, below the MSRV.
 
-Without default features the crate builds for `thumbv7em-none-eabihf`, a target with no `std`. The `jiff` feature alone builds for the same target, and `scripts/check-no-std.sh` builds both. With `system-tzdb` the crate itself is still `no_std`, but jiff's `tzdb-zoneinfo` feature turns on jiff's `std` feature, so that build needs a target with `std`. Without `system-tzdb`, jiff's global database is empty, so `upcoming` finds no named zone and the caller passes a database to `upcoming_with`.
+Without default features the crate builds for `thumbv7em-none-eabihf`, a target with no `std`. The `jiff` feature alone and the `cron` feature alone build for the same target, and `scripts/check-no-std.sh` builds all three. With `system-tzdb` the crate itself is still `no_std`, but jiff's `tzdb-zoneinfo` feature turns on jiff's `std` feature, so that build needs a target with `std`. Without `system-tzdb`, jiff's global database is empty, so `upcoming` finds no named zone and the caller passes a database to `upcoming_with`.
 
 The unit test in `next` declares `extern crate std` inside its test module to print its report. `#![cfg_attr(not(test), no_std)]` would do the same at the crate root, but `scripts/check-security.sh` rejects `cfg_attr` in `src/`.
 
@@ -368,6 +392,7 @@ src/lib.rs     crate docs, re-exports, and the README doctests, no logic
 src/error.rs   ParseError and its private kinds
 src/model.rs   the types above, their constructors, pure queries such as Component::next_at_or_after
 src/parse.rs   &str to CalendarEvent, the FromStr impl
+src/cron.rs    (feature cron) a cron schedule to CalendarEvent values, CronError
 src/format.rs  CalendarEvent to the normalized string, the Display impl
 src/zone.rs    (feature jiff) Zone to jiff::tz::TimeZone, UnknownTimeZone
 src/next.rs    (feature jiff) upcoming, Upcoming, the search
@@ -376,6 +401,7 @@ src/next.rs    (feature jiff) upcoming, Upcoming, the search
 | Module | Owns | Does not know |
 | --- | --- | --- |
 | `model` | That only valid, normalized values exist. End value shrinking, folding, sorting, deduplication, the item cap. Pure queries such as "the first value at or after `x`". | Text, jiff, time zones |
+| `cron` | The cron grammar, the cron field ranges and names, the day of month and day of week rule, and the choice of model items that elapse like cron. Byte offsets for its errors. | jiff, `parse`, `format`, the systemd grammar |
 | `parse` | All grammar. Whitespace rules, weekday names, two-digit years, shorthands, fraction rounding, filling the date from the right, splitting off the zone token, the zone name format check. Byte offsets for errors. | jiff, the search, `format` |
 | `format` | All output rules. Zero padding, weekday runs, fraction printing, the zone suffix. | Grammar, jiff, `parse` |
 | `zone` | Turning `Zone` into a `jiff::tz::TimeZone`. The exact-case name check. | Text other than the zone name, the search |
@@ -384,7 +410,7 @@ src/next.rs    (feature jiff) upcoming, Upcoming, the search
 Rules at the boundaries:
 
 - Validation happens once, in `parse` and the `model` constructors. `format` and `next` trust the model and do not check it again.
-- `parse` and `format` never call each other. The model is the only thing they share.
+- `parse` and `format` never call each other. The model is the only thing they share. `cron` builds the model with the same constructors and calls neither.
 - `model`, `parse`, and `format` never import jiff. `zone` and `next` are the only modules that do, so the zero-dependency core is enforced by the module graph.
 
 ## Normalization and output rules
@@ -675,6 +701,132 @@ The lints in `Cargo.toml` deny `unwrap`, `expect`, `panic!`, `unreachable!`, ind
 - A branch that cannot happen, such as a failed conversion of a month that is already in range, returns `None`. It is never a panic.
 - Every `start + k * step` uses `checked_mul` and `checked_add`. Conversions between jiff's integer types and `u32` use `try_from`.
 
+## Cron conversion
+
+`CalendarEvent::from_cron`, behind the `cron` feature, converts a five-field cron schedule into the calendar events that elapse at the same minutes. It exists for users who move cron jobs to systemd timers. The direction is one way: there is no conversion from a calendar event to cron.
+
+Everything else in this crate is checked against a real program, `systemd-analyze calendar`. The cron side has no such oracle in this repository. Its rules come from documents, and its tests compare against a reference calculator written from the same documents. [Verification and its limits](#verification-and-its-limits) says what that does and does not prove.
+
+### Sources
+
+- The POSIX specification of the `crontab` utility (The Open Group Base Specifications, Issue 8), section "Input Files". It defines five fields, `*`, values, inclusive ranges `a-b`, comma lists, and the rule that joins the day of month and the day of week. It has no steps, no names, no 7 for Sunday, and no special strings.
+- The `crontab(5)` manual pages of cronie, of Debian's `cron` package, and of FreeBSD. They add steps after `*` or a range, three-letter month and weekday names in any case, 7 for Sunday, and the special strings.
+
+The clean-room rule is extended to cron: no source code of a cron daemon, a cron library, or an existing cron-to-systemd converter was opened. Where the documents disagree or say nothing, the conversion rejects the input or follows the rule this section names.
+
+### Accepted input
+
+- Five fields separated by runs of spaces or tabs: minute 0 to 59, hour 0 to 23, day of month 1 to 31, month 1 to 12, day of week 0 to 7, with 0 and 7 both Sunday. Blanks before the first and after the last field are allowed.
+- A field is `*`, `*/s`, or a comma list of items. An item is a value `v`, a range `a-b` with `a <= b`, or a stepped range `a-b/s`. A step `s` runs from 1 to the largest value of the field.
+- Months and weekdays also take three-letter English names in any case (`jan`, `MON`, `Fri`), in values and in ranges. cronie and FreeBSD allow names in lists and ranges, and Debian does not. Accepting them costs nothing, because a name stands for exactly one number.
+- `@yearly` and `@annually` (`0 0 1 1 *`), `@monthly` (`0 0 1 * *`), `@weekly` (`0 0 * * 0`), `@daily` and `@midnight` (`0 0 * * *`), and `@hourly` (`0 * * * *`), in any case, alone on the input. `@weekly` is Sunday at midnight. systemd's `weekly` is Monday, so the conversion prints `Sun *-*-* 00:00:00`.
+
+### Rejected input
+
+| Input | Why |
+| --- | --- |
+| Four fields, or six or seven (a seconds or year field) | Not part of the five-field format. The offset is that of the sixth field, or the input length when fields are missing. |
+| `L`, `W`, `#`, `?` in any field, such as `L`, `15W`, `LW`, `L-3`, `5#3` | Extensions of other cron dialects. None of the three manual pages has them. |
+| `@reboot` and any other `@` word | `@reboot` has no calendar meaning. A timer unit uses `OnBootSec=` instead. |
+| A step after a single value, such as `5/15` | None of the three manual pages defines it, and implementations are known to read it differently. |
+| A reversed range, such as `5-3` or `fri-sun` | No document defines a range that wraps. `sun` is 0, so `fri-sun` is reversed. `fri-7` and `5-7` work. |
+| `*` inside a list or a range, such as `*,5` or `*-5` | Not in POSIX, and it would make the day rule below depend on where in the field the `*` stands. |
+| Full names such as `monday`, a step of 0 or above the field's largest value, values out of range | Not in the documents. |
+| More than 1024 bytes, or more than 241 items in one field | Bounds the work. A real schedule is far shorter. 241 is the item cap of the model. |
+
+### Field mapping
+
+Seconds are always `00`, because cron runs at whole minutes. The year is `*`. The events name no time zone.
+
+| cron field | Calendar event | Note |
+| --- | --- | --- |
+| `*`, `*/1` | `*` | |
+| `5` | `05` | |
+| `0-5` | `00..05` | |
+| `45,5,15,5` | `05,15,45` | The model sorts and removes duplicates. |
+| `*/15` (minute) | `00/15` | 15 reaches 60 exactly, so `v/r` is safe. See [Steps](#steps). |
+| `*/45` (minute) | `00..45/45` | 45 does not reach 60 exactly. |
+| `5-59/15` (minute) | `05..50/15` | The end shrinks to the last value reached. |
+| `10-59/25` (minute) | `10/25` | 25 reaches 60 from 10 exactly. |
+| `10-50/15` (minute) | `10..40/15` | |
+| `*/5` (hour) | `00..20/5` | |
+| `*/6` (hour) | `00/6` | |
+| `*/2` (day of month) | `01/2` | The day and month fields have no wrap floor. |
+| `*/31` (day of month) | `01` | `1/31` reaches one value only. |
+| `*/3` (month) | `01/3` | |
+| `1-5`, `mon-fri` (day of week) | `Mon..Fri` | |
+| `0`, `7`, `0,7`, `sun` | `Sun` | |
+| `*/2` (day of week) | `Tue,Thu,Sat,Sun` | 0, 2, 4, 6 |
+| `0-7` (day of week) | no weekday part | All seven days. |
+
+### Steps
+
+A cron step counts inside its field and starts again with the next hour, day, or year: `*/45` in the minute field runs at :00 and :45 of every hour, as the cronie page says for `*/35`. A stepped range `a..b/r` behaves the same way in systemd. A repetition `v/r` almost does, but the [civil search](#civil-search) has a wrap floor. When the minutes run out in hour 23, the next day starts at the first `v + k·r` past 60, minus 60, and not at `v`. `*-*-* *:00/45:00` from 2026-01-31 23:50 UTC elapses at 00:45 and skips 00:00 (observed). The same holds for the hour field at the end of a month.
+
+The conversion therefore writes `v/r` only when it elapses like cron, and `a..b/r` otherwise:
+
+- In the hour and the minute fields, `v/r` when the cron progression runs to the end of the field (`*/r` or `v-max/r`) and `(length - v) % r == 0`, with a length of 24 or 60. The field can run out at `x` only after its last value, `length - r`, so the first `v + k·r` at or after `x` is `length` and the floor is 0, the start of the period. With several such items the floor is still 0. This is the readable form for the common steps: `*/2`, `*/3`, `*/4`, `*/5`, `*/6`, `*/10`, `*/12`, `*/15`, `*/20`, and `*/30` in minutes, and the divisors of 24 in hours.
+- In the day of month and the month fields, `v/r` whenever the progression runs to the end of the field. These fields have no floor (observed, see [Civil search](#civil-search)).
+- `v/r` needs `v + r` at most the largest value. When the step reaches only one value, the item is that value (`*/31` in days is `01`).
+- In every other case, `a..b/r`. The model shrinks `b` to the last value reached.
+
+Expanding a step into a list of values was rejected. The output would be longer and harder to read, and the model already has a form with the same meaning.
+
+### Day of month and day of week
+
+cron runs on a day when the month matches and the two day fields together match:
+
+| Day of month | Day of week | Days | Events |
+| --- | --- | --- | --- |
+| unrestricted | unrestricted | days that match both fields | one |
+| restricted | unrestricted | days that match the day of month and the day of week | one |
+| unrestricted | restricted | days that match the day of month and the day of week | one |
+| restricted | restricted | days that match either field | two |
+
+A field is unrestricted when it starts with `*`: `*` itself or `*/s`. So `0 0 */2 * sun` is one event, `Sun *-*-01/2 00:00:00`, Sundays on odd days. The sources:
+
+- POSIX distinguishes only `*` from a value or a list, because it has no steps.
+- Debian's page says the check looks at the first character of the field, and gives this example with the same answer.
+- cronie's page calls a field restricted when it does not contain `*`.
+
+Because the conversion accepts `*` only as the whole field or before a step, "starts with `*`" and "contains `*`" agree on every accepted input.
+
+A calendar event matches a day only when the weekday and the date both match. When both day fields are restricted, the conversion returns two events with the same month and time: one with the days of the month and every weekday, and one with every day of the month and the weekdays. `0 9 1 * 1` becomes `*-*-01 09:00:00` and `Mon *-*-* 09:00:00`. A timer unit takes several `OnCalendar=` lines. The events are not merged, also when one covers the other, as with `1-31` and `mon`.
+
+The month always narrows both day fields. `0 0 * 1 1` is Mondays in January, and `0 0 1 1 1` is January 1 and every Monday in January. This follows the three `crontab(5)` pages. The POSIX text also names the month in its "either" case, and one reading of it would run `0 0 * 1 1` on every day of January and on every Monday of the year. That reading is not followed.
+
+### Building the events
+
+`cron` builds the events with the model constructors (`Item::range`, `Item::every`, `Items::new`, `Component::from_items`, `WeekdaySet::from_bits`), so each event is normalized by construction, as if it had been parsed. Building a string and parsing it with `FromStr` was rejected. It would be a second spelling of the model in text, and a bug in it would show up as a parse error at run time. The tests and the `from_cron` fuzz target check the round trip instead: every converted event prints a form that parses back to an equal event.
+
+### Errors
+
+`CronError` has the shape and the guarantees of `ParseError`: a fixed message and a byte offset on a character boundary, never a part of the input. It is a separate type because its messages start with `cron expression:` and name cron fields, such as `day of week out of range at byte 8`. Sharing `ParseError` would add a hidden switch between two grammars to one type. An input over 1024 bytes reports the largest character boundary at or below 1024.
+
+### Time zones and daylight saving time
+
+The events name no time zone, so they elapse in the local time of the timer, by systemd's rules: a time in a gap is skipped, and a time in a fold elapses once. Cron daemons differ here. The cronie page says that missing times never run and repeated times run twice, and FreeBSD's cron has a flag that changes its behavior. The conversion does not imitate any of them. cron's `CRON_TZ` variable is not part of the five fields. To run a converted event in another zone, append the zone name to it, such as `*-*-* 09:00:00 Asia/Seoul`.
+
+### Verification and its limits
+
+1. `tests/fixtures/cron.tsv` lists cron expressions with the events or the error message they convert to, and `tests/cron.rs` checks every row.
+2. Every event in `cron.tsv` is a row of `tests/fixtures/cases.tsv`, from 2026-01-01 and, for the events with a step, from 2026-01-31 23:50 and 2028-02-28 22:59:30 UTC. `tests/cron.rs` fails when one is missing. So systemd accepts each event, prints the same normalized form, and gives the same first five elapses as this crate.
+3. A reference calculator in `tests/cron.rs` reads the cron expression again, written from the documents above and sharing no code with `src/cron.rs`. It expands each field into a set of values, walks every day, and lists each matching minute of each matching day in UTC. The test compares that list with the sorted union of the converted events' elapses. The fixture rows run from 2024 to 2031 with at most 20,000 elapses each: 73 rows and 544,509 elapses (measured). 1,500 random expressions run over four years each with at most 1,500 elapses: 1,651,576 elapses (measured). An ignored test runs 50,000 random expressions over eight years each with at most 5,000 elapses: 169,553,824 elapses in 38 s of a release build (measured once).
+4. Random conversions were also compared with systemd once, outside the fixtures: `print_random_conversions_for_oracle` printed 450 events of 300 random expressions with random base times, and `scripts/verify compare` reported `differing: 0` (measured).
+
+The comparison catches a wrong step rule and a wrong day rule. With `v/r` for every step, 4 of the 73 fixture rows and 35 of the 1,500 random expressions differ, and with the day rule always joining the fields, 7 and 704 differ (measured once each, by editing the code and running the test).
+
+What this does not prove:
+
+- No cron daemon runs in the tests. The reference calculator and the conversion share one reading of the documents, so a misreading in both stays hidden. Behavior the documents leave open is rejected, not guessed.
+- The comparison in item 3 uses this crate's `upcoming`, which matches systemd on the fixture rows and the 450 random rows, not on every instant.
+- The comparison runs in UTC. Daylight saving time follows systemd, as above.
+- Whether systemd elapses once or twice when two `OnCalendar=` lines of one timer fall on the same minute was not checked. A timer unit is outside the oracle.
+
+### Size
+
+On macOS aarch64, with `opt-level = "z"`, LTO, one codegen unit, and `panic = "abort"`, a program that parses and prints a calendar event has 224,864 bytes of `__text`. The same program calling `from_cron` too has 234,276 bytes, 9,412 more, and about 1 KB more of constants (measured once).
+
 ## Security model
 
 The expression is untrusted. It can come from a web form, a configuration file written by another tenant, or a fuzzer. The caller controls `after` and `local`, but the tests still cover their extreme values.
@@ -697,6 +849,8 @@ The crate promises:
 | Digits in a fraction | none | Only the first seven digits feed the rounding. The rest are checked to be digits. |
 | Time zone name length | 64 bytes | Longer than any IANA name. Stops a large token from reaching the lookup. |
 | Steps in one `next` call | 20,000 | A safety net above the proven bound of about 5,000. |
+| Bytes in a cron expression | 1,024 | `from_cron` only. A real schedule is under 100 bytes. |
+| Items in one cron field | 241 | `from_cron` only. The item cap of the model. |
 
 There is no limit on the input length. With the item cap, memory is bounded, and the parser is linear in time. systemd shows no length limit either: it accepts 1,000 weekday items, 3,000 spaces between parts, and 3,000 leading zeros (observed).
 
@@ -731,10 +885,11 @@ The crate's own code never reads the environment. `clippy.toml` lists `std::env:
 | Build | Budget |
 | --- | --- |
 | `default-features = false` | 0 extra crates. About 0.3 s cold release build (measured on the baseline prototype). |
+| `cron` without default features | 0 extra crates. About 10 KB of code (see [Cron conversion](#cron-conversion)). |
 | Default features | Only the crates that jiff pulls in with `std`, `tzdb-zoneinfo`, and `tzdb-bundle-platform`. About 226 KB of stripped executable over the baseline (measured with `std` and `tzdb-zoneinfo`). |
 | The command-line tool in `cli/` | 4 crates on a Unix host: `oncalendar`, `jiff`, `jiff-core`, and `jiff-tzdb`. See [Command-line tool](#command-line-tool). |
 
-`scripts/check-weight.sh` gates the number of crates in the normal dependency graph and reports the cold build time and the rlib size. Build time and size are reported, not gated, because they depend on the machine. The script counts two configurations. The limit is 0 without default features and 2 with them (`jiff` and `jiff-core`, as resolved on a Unix host). It also counts the crates of the command-line tool, with a limit of 4, and reports the size of its stripped release executable. A failing `cargo tree` fails the gate.
+`scripts/check-weight.sh` gates the number of crates in the normal dependency graph and reports the cold build time and the rlib size. Build time and size are reported, not gated, because they depend on the machine. The script counts four configurations. The limit is 0 without default features and with only `cron`, 2 with only `jiff`, and 2 with the default features (`jiff` and `jiff-core`, as resolved on a Unix host). It also counts the crates of the command-line tool, with a limit of 4, and reports the size of its stripped release executable. A failing `cargo tree` fails the gate.
 
 ## WebAssembly build and demo page
 
@@ -885,6 +1040,8 @@ Error rows check only success or failure, because systemd reports only an error 
 
 `tests/robustness.rs` uses only the public API and holds these 20 properties. Time limits are generous, about 5 s, so that correct code finishes in milliseconds and a broken search fails by minutes.
 
+`tests/cron.rs` holds the cron properties: no panic on 40,000 random and mutated inputs, offsets on character boundaries, short ASCII messages that never repeat the input, every accepted input giving one or two events whose forms parse back, the length and item limits, and inputs of up to 1,000,000 bytes finishing inside the time limit. See [Cron conversion](#verification-and-its-limits) for its comparisons.
+
 `tests/normalize.rs` needs no feature. It checks that every row systemd accepted parses and prints the same normalized form, so the build without dependencies is compared with systemd too.
 
 Parsing:
@@ -918,9 +1075,9 @@ Computation:
 
 ### Scripts and CI
 
-- `scripts/check-security.sh` checks that `Cargo.toml` still forbids `unsafe` code, runs clippy with the deny lints, runs `cargo deny check`, and runs `tests/robustness.rs`. It also fails when `src/` switches a lint off, and through `clippy.toml` when library code calls a method that reads the environment or the system time zone.
+- `scripts/check-security.sh` checks that `Cargo.toml` still forbids `unsafe` code, runs clippy with the deny lints, runs `cargo deny check`, and runs `tests/robustness.rs` and `tests/cron.rs`. It also fails when `src/` switches a lint off, and through `clippy.toml` when library code calls a method that reads the environment or the system time zone.
 - `scripts/check-weight.sh` is described under [Weight budget](#weight-budget).
-- `scripts/check-no-std.sh` builds the crate without default features for `thumbv7em-none-eabihf`. It fails, rather than skips, when that target is not installed for the active toolchain. Set `RUSTUP_TOOLCHAIN` to run it on another toolchain.
+- `scripts/check-no-std.sh` builds the crate without default features for `thumbv7em-none-eabihf`, and again with only `jiff` and with only `cron`. It fails, rather than skips, when that target is not installed for the active toolchain. Set `RUSTUP_TOOLCHAIN` to run it on another toolchain.
 - `scripts/check-features.sh` runs clippy with warnings denied on every feature combination (`cargo hack --feature-powerset`).
 - `scripts/check-minimal-versions.sh` resolves every dependency to its lowest allowed version (`cargo minimal-versions`) and runs the tests with all features. `Cargo.lock` is restored afterwards.
 - `scripts/check-package.sh` compares `cargo package --list` with an allow list in the script and then builds the packaged crate.
@@ -958,12 +1115,12 @@ The repository carries no code comments (see `CLAUDE.md`), so the reasons behind
 - Shell scripts, Docker, and the weight limit stay on Linux. The weight limit of 2 holds only for a Unix host, and the oracle needs Docker. On Windows, jiff finds no system zoneinfo and uses the database that `tzdb-bundle-platform` compiles in. The tests do not notice, because they read the bundled database. They also pass with every fixture and source file converted to CRLF line endings, as a Windows checkout may do (measured on macOS).
 - `wasm/` is a separate crate with its own `[workspace]` for the same reasons as `fuzz/`. `wasm/Cargo.lock` is committed. `cargo deny` runs on the library only, and the crate adds no dependency that the library's dev-dependencies do not already have.
 - `fuzz/` is a separate crate with its own `[workspace]`, so it is not a member of this crate's build, `cargo tree` does not count its dependencies, and the `include` list keeps it out of the package. `fuzz/Cargo.lock` is committed so that CI fuzzes with the same `libfuzzer-sys`. Dependabot does not update it.
-- The fuzz targets: `parse_roundtrip` parses any UTF-8 input and, when it is accepted, checks that the normalized form parses to the same event and prints the same text. `upcoming` takes a base time, a local zone from a short list of zones with daylight saving changes plus the extreme fixed offsets, and an expression, calls `upcoming_with` with the bundled database, and checks that up to 16 results each lie strictly after the one before, starting from the base time. A base time of zero bytes means 2026-01-01 UTC, so the seeds from the fixtures start in the years the fixtures use. Each input has 10 s before libFuzzer reports it as a hang.
+- The fuzz targets: `from_cron` converts any UTF-8 input and, when it is accepted, checks that there are one or two events and that each prints a form that parses back to the same event. When it is rejected, it checks that the offset is a character boundary of the input. `scripts/fuzz.sh` seeds it with the first column of `tests/fixtures/cron.tsv`. `parse_roundtrip` parses any UTF-8 input and, when it is accepted, checks that the normalized form parses to the same event and prints the same text. `upcoming` takes a base time, a local zone from a short list of zones with daylight saving changes plus the extreme fixed offsets, and an expression, calls `upcoming_with` with the bundled database, and checks that up to 16 results each lie strictly after the one before, starting from the base time. A base time of zero bytes means 2026-01-01 UTC, so the seeds from the fixtures start in the years the fixtures use. Each input has 10 s before libFuzzer reports it as a hang.
 - A failing fuzz input is saved under `fuzz/artifacts/<target>/`. libFuzzer also prints it in base64 in the log, which is how a CI failure can be reproduced: decode it to a file and run `cargo +nightly fuzz run <target> <file>`.
 - The slow reference in `tests/robustness.rs` can be checked against systemd. Run `cargo test --test robustness -- --ignored --nocapture print_generated > gen.tsv`, then `grep -v '^[a-z]' gen.tsv | cut -f1-3 | oracle/run.sh > gen.expected.tsv`. Column 4 of `gen.tsv` must be a prefix of column 6 of `gen.expected.tsv`, and column 4 of `gen.expected.tsv` must be `ok`. The reference gives a day counted from the end one item, because longer lists hit the limit under [Dates](#dates).
 - The slow reference in `tests/robustness.rs` tests every grid point, so it cannot express the wrap floor of the [civil search](#civil-search). Its generator gives `v/r` items in the hour, minute, and second fields only steps that end exactly at the field length (`(24 - v) % r == 0` or `(60 - v) % r == 0`), where the floor equals the minimum. The fixtures and the oracle cover the floor.
 - In `tests/robustness.rs`, the list-cap test leaves out lists of distinct days from the end. Under the limit in [Dates](#dates), at most seven distinct days from the end fit in one list, so such a list never reaches the item cap.
-- The Rust examples in `README.md` run as doctests. `src/lib.rs` attaches the file as the documentation of a private item that exists only under `cfg(all(doctest, feature = "jiff"))`. The crate documentation stays separate from the README, because the README links to repository files that docs.rs cannot show. The item needs the `jiff` feature because most README examples call `upcoming`. `#![cfg_attr(doctest, doc = include_str!(...))]` would avoid the item, but `scripts/check-security.sh` rejects `cfg_attr` in `src/`. The README examples cannot use hidden `#` lines, because GitHub and crates.io show those lines. Each example is a whole program with its own `fn main`.
+- The Rust examples in `README.md` run as doctests. `src/lib.rs` attaches the file as the documentation of a private item that exists only under `cfg(all(doctest, feature = "jiff"))`. The crate documentation stays separate from the README, because the README links to repository files that docs.rs cannot show. The item needs the `jiff` and `cron` features because most README examples call `upcoming` and one calls `from_cron`. So `cargo test --doc --no-default-features --features jiff,cron` runs them without `system-tzdb`, and `cargo test --all-features` runs them too. `#![cfg_attr(doctest, doc = include_str!(...))]` would avoid the item, but `scripts/check-security.sh` rejects `cfg_attr` in `src/`. The README examples cannot use hidden `#` lines, because GitHub and crates.io show those lines. Each example is a whole program with its own `fn main`.
 - The search queries in `model`, such as `Component::next_at_or_after` and `DaySpec::mask`, are compiled only with the `jiff` feature, because only `next` calls them.
 - `cli/clippy.toml` exists so that clippy does not use the root `clippy.toml` for the tool. Clippy looks for the file in the crate directory and then in each parent directory, and the root file forbids `TimeZone::try_system`, which the tool needs for the system time zone. The tool's file forbids reading environment variables, as the root file does. jiff reads `TZ` itself.
 - The tests of the tool read `tests/fixtures/expected.tsv` and the root `README.md` from outside `cli/`. The `include` list in `cli/Cargo.toml` leaves `tests/` out of the package, so `cargo package` warns that it ignores the test targets, as it does for the library's bench target.

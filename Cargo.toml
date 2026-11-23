@@ -13,8 +13,12 @@ include = ["/src", "/tests", "/README.md", "/CHANGELOG.md", "/LICENSE-MIT", "/LI
 
 [features]
 default = ["system-tzdb"]
+cron = []
 jiff = ["dep:jiff"]
 system-tzdb = ["jiff", "jiff/std", "jiff/tzdb-zoneinfo", "jiff/tzdb-bundle-platform"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [dependencies]
 jiff = { version = "1", default-features = false, features = ["alloc"], optional = true }
@@ -25,6 +29,10 @@ jiff = { version = "1", default-features = false, features = ["std", "tzdb-bundl
 [[test]]
 name = "oracle"
 required-features = ["jiff"]
+
+[[test]]
+name = "cron"
+required-features = ["cron", "jiff"]
 
 [[bench]]
 name = "speed"

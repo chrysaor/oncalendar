@@ -11,12 +11,19 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-oncalendar = { path = ".." }
+oncalendar = { path = "..", features = ["cron"] }
 jiff = { version = "1", default-features = false, features = ["std", "tzdb-bundle-always"] }
 
 [[bin]]
 name = "parse_roundtrip"
 path = "fuzz_targets/parse_roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "from_cron"
+path = "fuzz_targets/from_cron.rs"
 test = false
 doc = false
 bench = false

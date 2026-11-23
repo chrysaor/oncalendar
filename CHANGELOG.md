@@ -6,11 +6,13 @@ This file lists the notable changes in each release. The format follows [Keep a 
 
 ### Added
 
+- The `cron` feature, off by default, with `CalendarEvent::from_cron` and `CronError`. `from_cron` converts a five-field cron schedule, or a special string such as `@daily`, into the calendar events that elapse at the same minutes. When both the day of month and the day of week are restricted, the result has two events, one `OnCalendar=` line each. Seconds and year fields, `L`, `W`, `#`, `?`, and `@reboot` are rejected. The feature adds no dependency and works without `std`.
+- `[package.metadata.docs.rs]` builds the documentation with every feature, so docs.rs shows `from_cron`.
 - `oncalendar-cli` 0.1.0, a command-line tool in `cli/`, installed with `cargo install oncalendar-cli`. Its executable, `oncalendar`, checks an expression, prints its normalized form, and lists its next elapses on any machine, with or without systemd. It takes the number of elapses, the base time, and the local time zone as options, reads one expression per line from standard input, prints JSON with `--json`, and can use the time zone database compiled into it, so zone names also work in a container without tzdata. Each kind of failure has its own exit status. The library is unchanged.
 - A WebAssembly build of the library in `wasm/`, outside the published crate, and a static demo page in `wasm/demo/`. The page checks an expression, marks where a parse error starts, prints the normalized form, and lists the next elapses in a chosen time zone.
 - `scripts/check-wasm.sh`, a gate that builds the library for `wasm32-unknown-unknown` and checks every fixture row through the WebAssembly module in Node.js. It runs in `scripts/verify gates` and in CI, and CI also builds the module with Rust 1.85.
 
-The published crate does not change.
+Without the `cron` feature, the library behaves as in 0.1.0.
 
 ## 0.1.0 - 2026-11-23
 

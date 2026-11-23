@@ -10,6 +10,7 @@ Cargo.toml.orig
 LICENSE-APACHE
 LICENSE-MIT
 README.md
+src/cron.rs
 src/error.rs
 src/format.rs
 src/lib.rs
@@ -17,7 +18,9 @@ src/model.rs
 src/next.rs
 src/parse.rs
 src/zone.rs
+tests/cron.rs
 tests/fixtures/cases.tsv
+tests/fixtures/cron.tsv
 tests/fixtures/expected.tsv
 tests/normalize.rs
 tests/oracle.rs
