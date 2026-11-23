@@ -732,8 +732,9 @@ The crate's own code never reads the environment. `clippy.toml` lists `std::env:
 | --- | --- |
 | `default-features = false` | 0 extra crates. About 0.3 s cold release build (measured on the baseline prototype). |
 | Default features | Only the crates that jiff pulls in with `std`, `tzdb-zoneinfo`, and `tzdb-bundle-platform`. About 226 KB of stripped executable over the baseline (measured with `std` and `tzdb-zoneinfo`). |
+| The command-line tool in `cli/` | 4 crates on a Unix host: `oncalendar`, `jiff`, `jiff-core`, and `jiff-tzdb`. See [Command-line tool](#command-line-tool). |
 
-`scripts/check-weight.sh` gates the number of crates in the normal dependency graph and reports the cold build time and the rlib size. Build time and size are reported, not gated, because they depend on the machine. The script counts two configurations. The limit is 0 without default features and 2 with them (`jiff` and `jiff-core`, as resolved on a Unix host). A failing `cargo tree` fails the gate.
+`scripts/check-weight.sh` gates the number of crates in the normal dependency graph and reports the cold build time and the rlib size. Build time and size are reported, not gated, because they depend on the machine. The script counts two configurations. The limit is 0 without default features and 2 with them (`jiff` and `jiff-core`, as resolved on a Unix host). It also counts the crates of the command-line tool, with a limit of 4, and reports the size of its stripped release executable. A failing `cargo tree` fails the gate.
 
 ## Verification
 
@@ -833,17 +834,19 @@ Computation:
 - `scripts/check-minimal-versions.sh` resolves every dependency to its lowest allowed version (`cargo minimal-versions`) and runs the tests with all features. `Cargo.lock` is restored afterwards.
 - `scripts/check-package.sh` compares `cargo package --list` with an allow list in the script and then builds the packaged crate.
 - `scripts/check-workflows.sh` runs `actionlint` and `zizmor` on `.github/`.
+- `scripts/check-cli.sh` checks the command-line tool in `cli/`: formatting, clippy with warnings denied, the lint switches in `cli/src/`, the tests, the packaged files against an allow list, and a build of the packaged tool against the library release on crates.io.
 - `scripts/fuzz.sh <seconds> [target...]` runs each `cargo-fuzz` target in `fuzz/` for the given time, seeded with the expressions in `tests/fixtures/cases.tsv`.
 - Each script fails, rather than skips, when the tool it needs is missing, and prints how to install it.
 - `deny.toml` allows only the MIT license, which every dependency offers, and bans duplicate crate versions.
 - `.github/workflows/ci.yml` runs on every push to `main` and every pull request:
   - `lint` (Linux): format, the comment check, the feature powerset, docs, the `no_std` build, and the package check.
-  - `test`: the tests in both feature configurations on Linux, macOS, and Windows.
-  - `msrv` (Linux): check, the `no_std` build, and the minimal-versions tests on 1.85.
+  - `test`: the tests in both feature configurations and the tests of the command-line tool, on Linux, macOS, and Windows.
+  - `msrv` (Linux): check, the `no_std` build, the minimal-versions tests, and a build of the command-line tool on 1.85.
+  - `cli` (Linux): `scripts/check-cli.sh`.
   - `security`, `weight`, `oracle`, and `workflows` (Linux).
   - `fuzz` (Linux): 60 seconds per fuzz target.
 - `.github/workflows/weekly.yml` runs on Monday mornings (UTC) and on demand, even when no code changed: `cargo deny check advisories`, a fresh build of the oracle image with `oracle/check.sh`, and 30 minutes per fuzz target.
-- `.github/dependabot.yml` asks for weekly updates of `Cargo.lock` and of the pinned actions.
+- `.github/dependabot.yml` asks for weekly updates of `Cargo.lock`, `cli/Cargo.lock`, and the pinned actions.
 
 What runs where is decided by running time. `verify gates` holds the checks that finish in seconds on a warm cache: the feature powerset, minimal versions, the package check, and the workflow check each took between 0.2 and 1.9 s (measured), and the whole of `verify gates` took about 15 s. The operating system matrix needs other machines, and fuzzing needs minutes to be worth running, so both are in CI only. Run `scripts/fuzz.sh 60` by hand after changing the parser or the search.
 
@@ -868,6 +871,59 @@ The repository carries no code comments (see `CLAUDE.md`), so the reasons behind
 - In `tests/robustness.rs`, the list-cap test leaves out lists of distinct days from the end. Under the limit in [Dates](#dates), at most seven distinct days from the end fit in one list, so such a list never reaches the item cap.
 - The Rust examples in `README.md` run as doctests. `src/lib.rs` attaches the file as the documentation of a private item that exists only under `cfg(all(doctest, feature = "jiff"))`. The crate documentation stays separate from the README, because the README links to repository files that docs.rs cannot show. The item needs the `jiff` feature because most README examples call `upcoming`. `#![cfg_attr(doctest, doc = include_str!(...))]` would avoid the item, but `scripts/check-security.sh` rejects `cfg_attr` in `src/`. The README examples cannot use hidden `#` lines, because GitHub and crates.io show those lines. Each example is a whole program with its own `fn main`.
 - The search queries in `model`, such as `Component::next_at_or_after` and `DaySpec::mask`, are compiled only with the `jiff` feature, because only `next` calls them.
+- `cli/clippy.toml` exists so that clippy does not use the root `clippy.toml` for the tool. Clippy looks for the file in the crate directory and then in each parent directory, and the root file forbids `TimeZone::try_system`, which the tool needs for the system time zone. The tool's file forbids reading environment variables, as the root file does. jiff reads `TZ` itself.
+- The tests of the tool read `tests/fixtures/expected.tsv` and the root `README.md` from outside `cli/`. The `include` list in `cli/Cargo.toml` leaves `tests/` out of the package, so `cargo package` warns that it ignores the test targets, as it does for the library's bench target.
+- `cli/LICENSE-MIT` and `cli/LICENSE-APACHE` are copies of the root files, because `cargo package` only takes files inside the package directory. Change both copies together.
+- `cli/Cargo.lock` is committed, so `cargo install oncalendar-cli --locked` builds with the tested versions.
+
+## Command-line tool
+
+`cli/` holds `oncalendar-cli`, a separate crate whose executable is `oncalendar`. It lets a user check an expression and see its elapses on a machine without systemd, such as macOS, Windows, a container, or CI. The library does not depend on it.
+
+### Crate layout
+
+- `cli/Cargo.toml` has its own `[workspace]`, like `fuzz/` and `scripts/probe/`. The library's `cargo tree`, package list, and feature powerset do not see the tool, so the limits of 0 and 2 in `scripts/check-weight.sh` and the allow list in `scripts/check-package.sh` stay as they are.
+- The tool depends on the library by path and by version. The path is for development in this repository. `cargo package` drops the path, so the published tool builds against the library release on crates.io. `scripts/check-cli.sh` runs `cargo package`, which builds the packaged tool against that release. A tool change that needs library API that is not released yet fails there, and the library is released first.
+- The library dependency turns off the default features and turns on `jiff`. The tool sets jiff's features itself: `std`, `tz-system` for the system time zone, `tzdb-zoneinfo` for the system copy of the database, and `tzdb-bundle-always` for the copy compiled into the executable. The library's `system-tzdb` would add `tzdb-bundle-platform`, which the bundled copy makes redundant.
+- On a Unix host the tool compiles four crates: `oncalendar`, `jiff`, `jiff-core`, and `jiff-tzdb`. `scripts/check-weight.sh` gates that number. Windows adds `windows-link`, which `tz-system` needs there. The stripped release executable is 1,173,920 bytes on macOS aarch64 (measured), and the cold release build took 2 to 3 s (measured, one run each). LTO with one codegen unit made it 1,113,360 bytes, 5% smaller (measured). It is off, because every `cargo install` would pay the longer build.
+- The arguments are parsed by hand. The tool has seven options and no subcommands, and the parser is about 100 lines. A small parser crate such as `lexopt` would add one crate and `clap` several (estimate), for no behavior a user would see.
+
+### Command shape
+
+- One command answers all three questions: whether the expression is valid, its normalized form, and when it elapses. `--count 0` makes it a validator for scripts. Separate `check` and `next` subcommands were rejected, because a user who asks one question usually asks the next.
+- The words of the expression are joined with single spaces. A shell splits an unquoted `Mon..Fri 9:00` into two arguments, and joining them makes the obvious command work. The cost is that several expressions cannot be passed as arguments. They go on standard input, one per line.
+- On standard input, empty lines and lines that start with `#` are skipped. An empty expression is always invalid, and no expression starts with `#`, so skipping them loses nothing and lets a file of expressions carry notes. Only the `\n` and a `\r` before it are removed from a line. Spaces at either end reach the parser, because they change whether systemd accepts the expression (see [Whitespace](#whitespace)). With no expression and a terminal on standard input, the tool reports a usage error instead of waiting.
+- `--zone` sets the zone for an expression that names none and the zone that times are printed in. systemd uses `TZ` for both, so the tool keeps one notion of local time. It ignores case, because it stands in for `TZ` and is not part of the expression grammar, where names are exact.
+- Without `--zone`, the zone comes from jiff's `TimeZone::try_system`, which reads `TZ` and then the system settings. When there is none, as in many containers, the tool uses UTC, which is the freedesktop.org default, and prints a warning on standard error.
+- Names are looked up in jiff's global database, which is the system copy, or the bundled copy when the host has none. So names work in a minimal container (measured in `debian:trixie-slim` with `/usr/share/zoneinfo` and `/etc/localtime` removed). `--bundled-tzdb` always uses the bundled copy, for the same answers on every host. A fallback per name was rejected, because one run could then mix two versions of the database.
+- `--after` takes `now`, `@` and Unix seconds, an RFC 3339 time, or a wall-clock time with an optional zone name after it. The last form is also the base time format of the fixtures. A wall-clock time in a gap or a fold uses jiff's compatible rule: forward by the gap, or the first pass of the fold.
+
+### Output
+
+- The human output starts with the normalized form, alone on its line, so it can be copied into a unit file. Each elapse follows on its own line: weekday, wall-clock time in the local zone, the abbreviation and the offset, and the time left. The offset tells the two passes of a fold apart where the abbreviation may not. An abbreviation that is only an offset, such as `+03`, is left out. The format is this tool's own and does not follow `systemd-analyze calendar`.
+- Errors go to standard error with the library message, the input, and a caret under the offset. The library never repeats the input, because callers log its messages. The tool shows the input to the user who typed it, and only after escaping every character outside printable ASCII, so an escape sequence cannot act on the terminal and a look-alike such as an en dash becomes visible. An input wider than 72 columns is cut to a window around the caret.
+- `--json` prints one JSON object per expression, one per line, with flat fields. Times are RFC 3339 with the local offset, which carries both the instant and the wall-clock time. JSON was chosen over tab-separated columns because results have optional fields and error messages, and `jq` reads it. The writer is about 60 lines in `render.rs`. `serde_json` would add at least three crates (estimate). It escapes control characters and U+2028 and U+2029.
+- The exit status tells the failures apart: 1 an invalid expression, 2 a usage error, 3 an unknown time zone, 4 no elapse after the base time, and 5 an I/O error. Among several expressions the lowest code wins, which puts the most actionable problem first: a broken expression before a zone name that a database update could fix, and both before a valid expression that never fires.
+
+### Limits
+
+The tool follows the library's [security model](#security-model) and adds these limits for what it reads and prints:
+
+| Limit | Value | Reason |
+| --- | --- | --- |
+| Elapses per expression | 10,000 | Bounds the output. Each `next` call ends, so the time is bounded too. 10,000 elapses of `*:*:0/0.000001` took 27 ms for the whole process (measured, release build). |
+| Bytes in one expression | 1 MiB | The line reader keeps at most 1 MiB and one byte of a line and discards the rest, so memory does not grow with the input. The longest fixture is 6,099 bytes. systemd has no limit that was found. |
+| Encoding | UTF-8 | A line that is not UTF-8 fails on its own, with the offset of the first bad byte, and reading goes on. |
+
+- The tool never panics on output. `print!` and `println!` panic when standard output is closed, so the lints deny them, and every write goes through `write!` with the error handled. A closed pipe ends the run quietly with the status so far.
+- `cli/Cargo.toml` repeats the library's panic lints, and `scripts/check-cli.sh` rejects `#[allow]`, `#[expect]`, and `#[cfg_attr]` in `cli/src/`.
+
+### Verification of the tool
+
+- `cli/tests/systemd.rs` runs the executable for every row of `tests/fixtures/expected.tsv` twice. The first pass gives each expression as an argument. The second gives the expressions of each run of rows with the same zone and base time on standard input. Both pass `--json`, `--bundled-tzdb`, the zone, the base time, and the iteration count, and compare acceptance, the normalized form, and the elapses to the second with the rules of `tests/oracle.rs`. The first pass also checks the exit status. The row with an empty expression cannot be a line of standard input, so only the first pass has it.
+- `cli/tests/cli.rs` checks what a user sees: the human output, the error caret, escaping, the exit codes, the `--after` forms, standard input handling, the limits, and the JSON escaping.
+- `cli/tests/readme.rs` reruns the examples in `cli/README.md` and `README.md` that do not depend on the current time and compares their output with the text shown.
+- The tests read JSON with a small reader in `cli/tests/common/mod.rs`, so the tests add no dependency either.
 
 ## Known differences from systemd
 

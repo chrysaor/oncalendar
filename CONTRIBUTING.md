@@ -86,7 +86,7 @@ Run every gate:
 scripts/verify gates
 ```
 
-The gates are formatting, the comment check, clippy on every feature combination, the tests with the lowest allowed dependency versions, the package check, the CI configuration check, the tests, the security gate, the weight gate, the `no_std` build, and the oracle check. Each gate is also a script that runs on its own:
+The gates are formatting, the comment check, clippy on every feature combination, the tests with the lowest allowed dependency versions, the package check, the CI configuration check, the tests, the security gate, the weight gate, the `no_std` build, the command-line tool check, and the oracle check. Each gate is also a script that runs on its own:
 
 | Gate | Command |
 | --- | --- |
@@ -99,6 +99,7 @@ The gates are formatting, the comment check, clippy on every feature combination
 | Lints, licenses, and robustness | `scripts/check-security.sh` |
 | Dependency count | `scripts/check-weight.sh` |
 | `no_std` build | `scripts/check-no-std.sh` |
+| Command-line tool in `cli/` | `scripts/check-cli.sh` |
 | Fixtures match systemd | `oracle/check.sh` |
 
 Check that the documentation builds and that its examples run. The examples in `README.md` run as tests too.
@@ -118,7 +119,11 @@ scripts/fuzz.sh 60
 
 A failing input is saved under `fuzz/artifacts/<target>/`.
 
-If you add a file that belongs in the published crate, add it to `include` in `Cargo.toml` and to the allow list in `scripts/check-package.sh`.
+If you add a file that belongs in the published crate, add it to `include` in `Cargo.toml` and to the allow list in `scripts/check-package.sh`. For the command-line tool, the include list is in `cli/Cargo.toml` and the allow list in `scripts/check-cli.sh`.
+
+## The command-line tool
+
+`cli/` is a separate crate, `oncalendar-cli`, with its own `[workspace]`. Run its tests with `cargo test --manifest-path cli/Cargo.toml`. They run the executable against every row of `tests/fixtures/expected.tsv` and rerun the examples in `cli/README.md` and `README.md`, so a change to an example's output means a change to the README text. The tool uses only the public API of the library, at the version in `cli/Cargo.toml`. The design is under "Command-line tool" in [docs/architecture.md](docs/architecture.md#command-line-tool).
 
 ## Tools
 

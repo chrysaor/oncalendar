@@ -23,6 +23,23 @@ oncalendar = { version = "0.1", default-features = false }
 
 See [Features](#features) for what each feature adds.
 
+## Command-line tool
+
+To check an expression from a terminal, on a machine with or without systemd, install the command-line tool:
+
+```sh
+cargo install oncalendar-cli
+```
+
+```console
+$ oncalendar -n 2 --zone Europe/Berlin --after '2026-03-28 12:00' '*-*-* 02:30'
+*-*-* 02:30:00
+  Mon 2026-03-30 02:30:00 CEST (+02:00)  in 1d 13h
+  Tue 2026-03-31 02:30:00 CEST (+02:00)  in 2d 13h
+```
+
+March 29 has no 02:30 in Berlin, so it is skipped. The tool reads several expressions from standard input, prints JSON with `--json`, and reports an invalid expression with its position and exit status 1. See [cli/README.md](cli/README.md).
+
 ## Parse and normalize
 
 `CalendarEvent` implements `FromStr`, and its `Display` output is the normalized form.
@@ -205,6 +222,7 @@ The expected results come from systemd, never from this crate. `oracle/` runs `s
 - `tests/normalize.rs` checks the normalized forms again with no feature, so the build without dependencies is covered.
 - `tests/robustness.rs` checks that hostile input never panics, never loops, and never appears in an error message, and checks the elapses against a slow reference search.
 - The scripts in `scripts/` check the lints, the licenses of dependencies, the dependency count, the `no_std` build, every feature combination, the lowest allowed dependency versions, the packaged files, and the CI configuration. `scripts/fuzz.sh` runs the `cargo-fuzz` targets in `fuzz/`.
+- `cli/tests/` runs the command-line tool against every fixture row, as an argument and on standard input.
 - CI runs the tests on Linux, macOS, and Windows. A weekly run checks for new advisories, rebuilds the oracle image, and fuzzes for 30 minutes per target.
 
 To run the tests:

@@ -1,0 +1,6 @@
+disallowed-methods = [
+    { path = "std::env::var", reason = "the tool reads no environment variable itself; jiff reads TZ for the system time zone" },
+    { path = "std::env::var_os", reason = "the tool reads no environment variable itself; jiff reads TZ for the system time zone" },
+    { path = "std::env::vars", reason = "the tool reads no environment variable itself; jiff reads TZ for the system time zone" },
+    { path = "std::env::vars_os", reason = "the tool reads no environment variable itself; jiff reads TZ for the system time zone" },
+]

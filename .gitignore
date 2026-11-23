@@ -1,6 +1,7 @@
 /target
 /.verify
 /scripts/probe/target
+/cli/target
 /fuzz/target
 /fuzz/corpus
 /fuzz/artifacts
