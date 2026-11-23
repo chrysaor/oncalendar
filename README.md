@@ -156,7 +156,9 @@ OnCalendar=Mon *-*-* 09:00:00
 
 - Fields take `*`, values, ranges, lists, steps after `*` or a range, three-letter month and weekday names in any case, and 0 or 7 for Sunday. `@yearly`, `@annually`, `@monthly`, `@weekly`, `@daily`, `@midnight`, and `@hourly` work too. `@weekly` is Sunday at midnight, as in cron, and systemd's `weekly` is Monday.
 - A step that does not reach the end of its field, such as `*/45`, becomes a stepped range (`00..45/45`), because systemd's `0/45` carries on past the end of the day and would skip midnight.
-- Rejected with an error: seconds and year fields, `L`, `W`, `#`, `?`, `@reboot`, a step after a single value such as `5/15`, and input longer than 1024 bytes.
+- Rejected with an error: seconds and year fields, `L`, `W`, `#`, `?`, `@reboot`, and input longer than 1024 bytes.
+- Also rejected, because cron daemons disagree about them: a step after a single value such as `5/15` (write `5-59/15`), and a range that runs backwards such as `fri-sun` (write `5-7`).
+- The month always has to match. When both the day of month and the day of week are restricted, either one may match. This is the rule of the `crontab(5)` manuals. The POSIX text pairs the month with the day of month instead.
 - The events name no time zone. They elapse in the timer's local time, with systemd's daylight saving time rules, which differ between cron daemons.
 
 The converted events are fixture rows that systemd checks. No real cron runs in the tests: the cron side is a reference calculator written from the POSIX `crontab` specification and the `crontab(5)` manual, compared minute by minute in UTC. [docs/architecture.md](docs/architecture.md#cron-conversion) has the rules and their sources.
