@@ -937,6 +937,7 @@ Computation:
   - `cli` (Linux): `scripts/check-cli.sh`.
   - `wasm`, `security`, `weight`, `oracle`, and `workflows` (Linux).
   - `fuzz` (Linux): 60 seconds per fuzz target.
+- `.github/workflows/pages.yml` publishes `wasm/demo/` to GitHub Pages after a push to `main` that changes the library, the wasm crate, or the fixtures. It runs `scripts/check-wasm.sh` first, so a module that fails the fixture check is not published. Only the deploy job has the `pages` and `id-token` write permissions.
 - `.github/workflows/weekly.yml` runs on Monday mornings (UTC) and on demand, even when no code changed: `cargo deny check advisories`, a fresh build of the oracle image with `oracle/check.sh`, and 30 minutes per fuzz target.
 - `.github/dependabot.yml` asks for weekly updates of `Cargo.lock`, `cli/Cargo.lock`, and the pinned actions.
 

@@ -158,7 +158,9 @@ Without `system-tzdb`, `upcoming` knows no zone name other than `UTC`, so an exp
 
 `wasm/` holds a small crate that compiles the library to WebAssembly (`wasm32-unknown-unknown`) and a static demo page in `wasm/demo/`. The page checks an expression as you type, marks where a parse error starts, prints the normalized form, and lists the next elapses in a time zone you pick. It loads only its own files, and what you type stays in the browser.
 
-To build the module and open the page, install the `wasm32-unknown-unknown` target and Node.js, then run these commands:
+The page is published at <https://chrysaor.github.io/oncalendar/>.
+
+To build the module and open the page yourself, install the `wasm32-unknown-unknown` target and Node.js, then run these commands:
 
 ```sh
 scripts/check-wasm.sh
