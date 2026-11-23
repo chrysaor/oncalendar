@@ -12,12 +12,13 @@
 //!   problem starts. Its message never repeats the input.
 //! - With the `jiff` feature (on by default), `CalendarEvent::upcoming` lists the elapses
 //!   after a given instant. The crate has no ambient "local time": the caller passes the
-//!   time zone that stands for "local time".
+//!   time zone that stands for "local time". `CalendarEvent::upcoming_with` does the same with
+//!   a time zone database the caller chooses, such as jiff's bundled one.
 //!
 //! Without the `jiff` feature the crate parses and normalizes only and has no dependencies.
 //! Parsing never touches the file system. A time zone name in an expression is checked for its
-//! form when parsing and looked up in the time zone database when `CalendarEvent::upcoming`
-//! runs.
+//! form when parsing and looked up in the time zone database when `CalendarEvent::upcoming` or
+//! `CalendarEvent::upcoming_with` runs.
 //!
 //! [`Display`]: core::fmt::Display
 

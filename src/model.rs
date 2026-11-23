@@ -168,10 +168,10 @@ impl<F: FieldSpec> Item<F> {
         }
     }
 
-    /// `start..stop`, or `start..stop/step`. The end shrinks to the last value reached.
+    /// `start..stop`, or `start..stop/step`. The end shrinks to the last value reached, and only
+    /// the shrunk end must lie inside the field.
     pub(crate) fn range(start: u32, stop: u32, step: Option<u32>) -> Result<Self, ErrorKind> {
         let first = Value::new(start)?;
-        Value::<F>::new(stop)?;
         let distance = stop.checked_sub(start).ok_or(ErrorKind::Range(F::FIELD))?;
         if step.is_none() && F::PLAIN_RANGE_NEEDS_TWO && distance < F::UNIT {
             return Err(ErrorKind::Range(F::FIELD));
@@ -225,28 +225,6 @@ impl<F: FieldSpec> Item<F> {
         }
     }
 
-    /// The largest value the item reaches.
-    fn largest(&self) -> u32 {
-        match *self {
-            Item::Value(v) => v.get(),
-            Item::Every { start, step } => {
-                if F::DESCENDING {
-                    start.get()
-                } else {
-                    last_reached(start.get(), F::MAX, step.get())
-                }
-            }
-            Item::Range { stop, .. } | Item::Stepped { stop, .. } => stop.get(),
-        }
-    }
-
-    /// The first value of an ascending item at or after `x`.
-    #[cfg(feature = "jiff")]
-    fn next_at_or_after(&self, x: u32) -> Option<u32> {
-        let (start, stop, step) = self.progression();
-        first_stepped(start, stop, step, x)
-    }
-
     /// Calls `f` with each value of the item. Only for fields with at most 31 values.
     #[cfg(feature = "jiff")]
     fn for_each_value(&self, mut f: impl FnMut(u32)) {
@@ -263,18 +241,9 @@ impl<F: FieldSpec> Item<F> {
     }
 }
 
-/// The last value of `start, start + step, ...` that is at most `stop`.
-fn last_reached(start: u32, stop: u32, step: u32) -> u32 {
-    stop.checked_sub(start)
-        .and_then(|d| d.checked_div(step))
-        .and_then(|n| n.checked_mul(step))
-        .and_then(|span| start.checked_add(span))
-        .unwrap_or(start)
-}
-
 /// The first value of `start, start + step, ...` up to `stop` that is at least `x`.
 #[cfg(feature = "jiff")]
-pub(crate) fn first_stepped(start: u32, stop: u32, step: u32, x: u32) -> Option<u32> {
+fn first_stepped(start: u32, stop: u32, step: u32, x: u32) -> Option<u32> {
     if x <= start {
         return (start <= stop).then_some(start);
     }
@@ -284,6 +253,16 @@ pub(crate) fn first_stepped(start: u32, stop: u32, step: u32, x: u32) -> Option<
         .checked_div(step)?;
     let value = start.checked_add(steps.checked_mul(step)?)?;
     (value <= stop).then_some(value)
+}
+
+impl Item<DayFromEnd> {
+    /// The largest day from the end the item reaches. `v/r` counts down, so that is `v`.
+    fn largest_from_end(&self) -> u32 {
+        match *self {
+            Item::Value(start) | Item::Every { start, .. } => start.get(),
+            Item::Range { stop, .. } | Item::Stepped { stop, .. } => stop.get(),
+        }
+    }
 }
 
 /// Not empty, sorted, no exact duplicates, at most `MAX_ITEMS` items.
@@ -339,9 +318,32 @@ impl<F: FieldSpec> Component<F> {
             Component::Any => first_stepped(F::MIN, F::MAX, F::UNIT, x),
             Component::List(items) => items
                 .iter()
-                .filter_map(|item| item.next_at_or_after(x))
+                .filter_map(|item| {
+                    let (start, stop, step) = item.progression();
+                    first_stepped(start, stop, step, x)
+                })
                 .min(),
         }
+    }
+
+    /// For a component with no value at or after `x`: the first value at or after `x` that a
+    /// `v/r` item would reach if it ran on past the end of the field, minus the length of the
+    /// field. `None` when the component has no `v/r` item. Only for ascending fields that
+    /// start at 0.
+    #[cfg(feature = "jiff")]
+    pub(crate) fn wrapped_floor(&self, x: u32) -> Option<u32> {
+        let Component::List(items) = self else {
+            return None;
+        };
+        let length = F::MAX.checked_add(1)?.checked_sub(F::MIN)?;
+        items
+            .iter()
+            .filter_map(|item| match *item {
+                Item::Every { start, step } => first_stepped(start.get(), u32::MAX, step.get(), x),
+                _ => None,
+            })
+            .min()?
+            .checked_sub(length)
     }
 }
 
@@ -364,7 +366,7 @@ impl DaySpec {
                 .ok()
                 .and_then(|i| i.checked_mul(FROM_END_ITEM_COST))
                 .and_then(|cost| DayFromEnd::MAX.checked_sub(cost));
-            if limit.is_none_or(|limit| item.largest() > limit) {
+            if limit.is_none_or(|limit| item.largest_from_end() > limit) {
                 return Err(ErrorKind::DayList);
             }
         }

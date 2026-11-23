@@ -2,7 +2,7 @@ use std::io::{self, BufRead, Write};
 
 use jiff::Timestamp;
 use jiff::civil::DateTime;
-use jiff::tz::TimeZone;
+use jiff::tz::{TimeZone, TimeZoneDatabase};
 use oncalendar::CalendarEvent;
 
 fn main() -> io::Result<()> {
@@ -10,9 +10,13 @@ fn main() -> io::Result<()> {
         .nth(1)
         .and_then(|arg| arg.parse().ok())
         .unwrap_or(5);
+    let database = TimeZoneDatabase::bundled();
     let stdout = io::stdout();
     let mut out = stdout.lock();
-    writeln!(out, "# oncalendar: public API via probe, iterations={iterations}")?;
+    writeln!(
+        out,
+        "# oncalendar: public API via probe, iterations={iterations}"
+    )?;
     for line in io::stdin().lock().lines() {
         let line = line?;
         if line.is_empty() || line.starts_with('#') {
@@ -26,7 +30,7 @@ fn main() -> io::Result<()> {
             writeln!(out, "{line}\tbad-input\t-\t-")?;
             continue;
         };
-        let (status, normalized, elapses) = run_case(zone, base, expression, iterations);
+        let (status, normalized, elapses) = run_case(&database, zone, base, expression, iterations);
         writeln!(
             out,
             "{zone}\t{base}\t{expression}\t{status}\t{normalized}\t{elapses}"
@@ -36,6 +40,7 @@ fn main() -> io::Result<()> {
 }
 
 fn run_case(
+    database: &TimeZoneDatabase,
     zone: &str,
     base: &str,
     expression: &str,
@@ -45,10 +50,10 @@ fn run_case(
     let Ok(event) = expression.parse::<CalendarEvent>() else {
         return error();
     };
-    let (Ok(local), Some(after)) = (TimeZone::get(zone), parse_base(base)) else {
+    let (Ok(local), Some(after)) = (database.get(zone), parse_base(database, base)) else {
         return ("bad-input", "-".to_string(), "-".to_string());
     };
-    let Ok(upcoming) = event.upcoming(after, &local) else {
+    let Ok(upcoming) = event.upcoming_with(after, &local, database) else {
         return error();
     };
     let elapses: Vec<String> = upcoming
@@ -66,9 +71,9 @@ fn run_case(
     ("ok", event.to_string(), elapses)
 }
 
-fn parse_base(base: &str) -> Option<Timestamp> {
+fn parse_base(database: &TimeZoneDatabase, base: &str) -> Option<Timestamp> {
     let (civil, zone) = base.rsplit_once(' ')?;
     let civil: DateTime = civil.parse().ok()?;
-    let zone = TimeZone::get(zone).ok()?;
+    let zone: TimeZone = database.get(zone).ok()?;
     Some(civil.to_zoned_datetime(zone).ok()?.timestamp())
 }

@@ -204,11 +204,20 @@ impl std::error::Error for ParseError {}
 impl CalendarEvent {
 	/// Instants strictly after `after` when the event elapses, in order.
 	/// `local` applies when the expression names no time zone.
-	pub fn upcoming<'a>(
-		&'a self,
+	/// A named zone is looked up in jiff's global database, `jiff::tz::db()`.
+	pub fn upcoming(
+		&self,
 		after: jiff::Timestamp,
-		local: &'a jiff::tz::TimeZone,
-	) -> Result<Upcoming<'a>, UnknownTimeZone>;
+		local: &jiff::tz::TimeZone,
+	) -> Result<Upcoming<'_>, UnknownTimeZone>;
+
+	/// The same, with a named zone looked up in `database`.
+	pub fn upcoming_with(
+		&self,
+		after: jiff::Timestamp,
+		local: &jiff::tz::TimeZone,
+		database: &jiff::tz::TimeZoneDatabase,
+	) -> Result<Upcoming<'_>, UnknownTimeZone>;
 }
 
 #[cfg(feature = "jiff")]
@@ -235,6 +244,7 @@ Each task has exactly one way to do it:
 | Print the normalized form | `event.to_string()` or `{}` |
 | Next elapse | `event.upcoming(after, &local)?.next()` |
 | Several elapses | `event.upcoming(after, &local)?.take(n)` |
+| Elapses with a chosen zone database | `event.upcoming_with(after, &local, &database)?` |
 
 Left out on purpose:
 
@@ -246,7 +256,16 @@ Left out on purpose:
 - `pub use jiff`. A re-export hides which jiff version the caller is linking against.
 - Structural accessors. They would make the four `Item` shapes part of semver while some normalization questions are still open.
 
-`upcoming` returns `Err(UnknownTimeZone)` only when the expression names a zone that the time zone database does not have. Once it returns `Ok`, the search cannot fail. Years are bounded to 1970..=2199, and "no further elapse" is `None`.
+`upcoming` returns `Err(UnknownTimeZone)` only when the expression names a zone that the time zone database does not have. Once it returns `Ok`, the search cannot fail. Years are bounded to 1970..=2199 on the wall clock of the effective zone, so a UTC instant can lie a few hours outside them. "No further elapse" is `None`.
+
+`Upcoming` borrows only the event. `local` and the database are read once, when the call resolves the effective zone, and the iterator keeps its own copy of that zone.
+
+`upcoming` is `upcoming_with` with jiff's global database. `upcoming_with` is for two cases:
+
+- A host without time zone files, such as a minimal container. With jiff's `tzdb-bundle-always` feature on, `&jiff::tz::TimeZoneDatabase::bundled()` holds the database compiled into the binary. Without that feature it is empty, and every named zone fails.
+- The same answers on every host. The tests, the oracle comparison, and the verification probe pass the bundled database, so their results do not depend on the host's tzdata.
+
+A name must match a name in the database exactly, letter case included, in both functions. `TimeZoneDatabase::get` itself ignores case, so the crate also compares the canonical name of the zone it returns.
 
 `jiff::Timestamp` has nanosecond resolution, and this crate works in microseconds. `upcoming` rounds `after` down to a whole microsecond and then looks for instants strictly greater. Every candidate is a whole microsecond, so rounding down never changes which candidate is "strictly after". Rounding up would be wrong. With `after` at `.4999995` s, rounding up to `.500000` s would skip an elapse at `.5` s.
 
@@ -258,7 +277,7 @@ The core has no dependencies. It holds the parser, the model, and the normalized
 
 The feature `jiff` adds `upcoming`, `Upcoming`, and `UnknownTimeZone`. It is on by default. With `default-features = false` the crate parses and normalizes, and compiles no other crate.
 
-Planned manifest entries:
+Manifest entries:
 
 ```toml
 [features]
@@ -443,6 +462,7 @@ The parser fills a short date from the right: day, then month, then year.
 
 - Lists are sorted, and exact duplicates are removed. Overlapping items are not merged.
 - A range end shrinks to the last value the step reaches. A range with one value becomes that value. A reversed range such as `5..3` is rejected.
+- Only the end after shrinking must lie inside the field (observed). `*:10..65/20` prints as `*:10..50/20`, `*-*-1..32/30` as `*-*-01..31/30`, and `*:*:0.5..60` as `*:*:00.500000..59.500000`. `*:10..70/20` and `*:*:0.5..61` are rejected, because their steps reach 70 and 60.5.
 - `v/r` needs `r >= 1` and `v + r <= max`. `*:0/59` and `*-*-1/30` are accepted. `*:30/59`, `*:0/60`, `*-*-1/31`, `2026/200`, and any `/0` are rejected.
 - `*` cannot take a repetition or join a list. `*/5`, `*/1`, `*-*/2-01`, and `*,1` are rejected.
 - `*:0..59` stays `00..59`. It does not become `*`.
@@ -459,7 +479,7 @@ The parser fills a short date from the right: day, then month, then year.
 
 Only `UTC` matches in any case. Other names keep the case as written, and `zone` accepts a name only when jiff's canonical name for the zone is exactly the token.
 
-The parser finds the zone this way. It first reads the whole input as an expression with no zone. When that fails, and the input has a last word after a single space that passes the [name check](#time-zone-names), it reads the rest as the expression and the last word as the zone. The first attempt matters because a date such as `10-15` also has the form of a zone name. The rest must still be a valid expression, so `UTC` alone, `daily  UTC` (the rest ends in a space), and `*-*-* 12:00 UTC UTC` are rejected. A last word that only looks like a zone, as in `Mon Mon`, `daily Mon`, or `10:00 Mon`, parses as a zone name, and `upcoming` then returns `UnknownTimeZone`. systemd rejects these at parse time, which is the known difference for unknown names.
+The parser finds the zone this way. It first reads the whole input as an expression with no zone. When that fails, and the input has a last word after a single space that passes the [name check](#time-zone-names), it reads the rest as the expression and the last word as the zone. The first attempt matters because a date such as `10-15` also has the form of a zone name. The rest must still be a valid expression, so `UTC` alone, `weekly  UTC` (a shorthand followed by a space), and `*-*-* 12:00 UTC UTC` are rejected. See [Whitespace](#whitespace) for spaces before the zone. A last word that only looks like a zone, as in `Mon Mon`, `daily Mon`, or `10:00 Mon`, parses as a zone name, and `upcoming` then returns `UnknownTimeZone`. systemd rejects these at parse time, which is the known difference for unknown names.
 
 Shorthands stand alone. `daily 10:00` and `Mon daily` are rejected, and only a zone may follow a shorthand.
 
@@ -470,8 +490,10 @@ Shorthands stand alone. `daily 10:00` and `Mon daily` are rejected, and only a z
 | `Mon   *-*-*   10:00` | `Mon *-*-* 10:00:00` |
 | `Mon  10:00` | `Mon *-*-* 10:00:00` |
 | ` Mon *-*-* 10:00` | rejected, leading space |
-| `Mon *-*-* 10:00 ` | rejected, trailing space |
-| `daily  UTC` | rejected, more than one space before the zone |
+| `Mon *-*-* 10:00 `, `daily `, `*-*-* UTC ` | rejected, trailing space after a time, a shorthand, or a zone |
+| `*-*-* 10:00  UTC`, `daily  UTC` | rejected, more than one space between a time or a shorthand and the zone |
+| `*-*-* `, `Mon `, `Mon, `, `2026-01-01  ` | accepted, trailing spaces after a date or weekdays with no time |
+| `*-*-*  UTC`, `Mon  UTC` | accepted, a run of spaces between a date or weekdays with no time and the zone |
 | a `T` between the date and the time | rejected |
 | empty string | rejected |
 
@@ -499,7 +521,7 @@ next(after):
 		match Z.to_ambiguous_timestamp(c):
 			unambiguous t -> return t
 			fold (t1, t2) -> return the earliest of t1, t2 that is later than after
-			gap           -> cursor = civil time at the end of the gap; continue
+			gap           -> cursor = civil time at the end of the gap; keep the floor; continue
 ```
 
 `Upcoming` calls `next` again with the previous result as `after`. After the first `None`, it keeps returning `None`.
@@ -519,6 +541,28 @@ Edge cases:
 3. Day. Build the matching days of that month as a 31-bit mask, with no allocation. Days from the start keep values up to the month length `L`. Days from the end map `k` to `L - k + 1`. Drop days whose weekday is not in the weekday set. Take the first day at or after the current one. If none, add one month and go back to step 2.
 4. Hour, minute, second. Same rule. If none, add one to the next larger field and go back to its step.
 
+One exception in step 4 follows systemd (observed). When a time field runs out at a value `x` inside its range and the carry also runs past the end of the next larger field, the new period does not start at the field's minimum. It starts at a floor:
+
+- The seconds field runs out in minute 59 (the carry wraps the hour), the minute field runs out in hour 23 (the carry wraps the day), or the hour field runs out on the last day of the month (the carry wraps the month).
+- For each `v/r` item, take the first `v + k·r` at or after `x` with no upper bound. The smallest of them, minus the field length (60 or 24), is the floor. With no `v/r` item there is no floor.
+- The period starts at the first value at or after the floor. The floor holds until a larger field changes in the search.
+
+| Expression | Base (UTC) | First elapse |
+| --- | --- | --- |
+| `*:0/24` | 2026-01-10 23:50 | 2026-01-11 00:24, not 00:00 (72 − 60 = 12) |
+| `*:0/24` | 2026-01-10 22:50 | 23:00. The carry does not wrap the day. |
+| `*:0/24,10/25` | 2026-01-10 23:50 | 00:00 (60 − 60 = 0) |
+| `*:*:0/7` | 10:59:57 | 11:00:07 |
+| `*:*:0/7` | 10:20:57 | 10:21:00 |
+| `0/5:00` | 2026-01-31 20:30 | 2026-02-01 05:00 |
+
+The day and month fields have no such floor: `*-*-5/12` from 2026-12-30 elapses at 2027-01-05.
+
+Two more rules apply when the zone has daylight saving time. Both were fitted to the oracle and then checked on 15,000 further random cases, nine in ten of them in one of 15 zones with daylight saving time and most of those with a base time near a transition. The differences that remain are listed in [Known differences](#known-differences-from-systemd).
+
+- The floor holds when the search restarts at the end of a gap. In `America/New_York`, `*:*:0/7` from 2026-03-08 01:59:57 EST elapses at 03:00:07 EDT.
+- A seconds floor set by the search is dropped when the clock is set back after `after` and no later than the instant found. The search then restarts at the start of that minute. In `America/New_York`, `*:*:0/7` from 2026-11-01 01:59:57 EDT elapses at 02:00:00 EST, and `*:*:3/11` at 01:59:58 EDT and then 02:00:03 EST.
+
 `Component::next_at_or_after(x)` computes the answer for each item with arithmetic and takes the minimum. Every field uses this one function. For seconds, `Any` means "the next whole second". `*:*:*` elapses on whole seconds (observed).
 
 The weekday list and the date both have to match. `Wed *-1` elapses only on the first of a month that falls on a Wednesday: 2026-04-01, 2026-07-01, 2027-09-01 (observed).
@@ -527,7 +571,7 @@ The weekday list and the date both have to match. `Wed *-1` elapses only on the 
 
 The rule is the same whether `Z` came from the expression or from `local`.
 
-A civil time that does not exist, in a gap, is skipped. The search does not shift it forward. The cursor jumps to the civil time at the end of the gap, which is the transition instant read in `Z`. The transition instant comes from `TimeZone::preceding`. Observed with `TZ=America/New_York`:
+A civil time that does not exist, in a gap, is skipped. The search does not shift it forward. The cursor jumps to the civil time at the end of the gap, which is the transition instant read in `Z`. A floor from the [civil search](#civil-search) stays in force there. The transition instant comes from `TimeZone::preceding`. Observed with `TZ=America/New_York`:
 
 | Expression | Base | Elapses |
 | --- | --- | --- |
@@ -561,7 +605,7 @@ The cursor starts at the civil time of `after + 1 µs`, not at the civil time of
 
 Each `next` call ends, for every input:
 
-- Inside one call, the cursor strictly increases at every step. A gap moves it to the end of the gap, which is later than the candidate. A carry moves it to the next value of a larger field.
+- Inside one call, the cursor strictly increases at every step. A gap moves it to the end of the gap, which is later than the candidate. A carry moves it to the next value of a larger field. Dropping a seconds floor after the clock was set back moves it to the start of the minute that was carried into, which is later than the cursor, and the search from there sets no seconds floor, so this happens at most once in a row.
 - The year never passes 2199, so the cursor cannot increase forever.
 - The search never steps through a gap one microsecond at a time. That matters for `*:*:0/0.000001`, which systemd accepts. Stepping through a one-hour gap at 1 µs would take 3.6 billion steps in one call.
 
@@ -614,7 +658,7 @@ The crate promises:
 | --- | --- | --- |
 | Items in one numeric field | 241 | systemd accepts 241 and rejects 242 (observed for minutes and days). The parser stops at item 242 and does not collect the rest first. Items count before deduplication: 240 copies of `0..59` are accepted, and 250 are rejected (observed). |
 | Items in the weekday list | none | The weekday set is seven bits, so more items cost no memory. systemd accepts 257 items (observed). |
-| Digits in a number | none | Accumulation is checked. Overflow is an out-of-range error. |
+| Digits in a number | none | Accumulation is checked. A value above 2,147,483,647 (2^31 − 1) is rejected, as systemd rejects it (observed): `*:0..10/2147483647` is accepted and `*:0..10/2147483648` is rejected. A seconds value counts in microseconds for this limit, so `2147.483647` is accepted and `2147.483648` is rejected. |
 | Digits in a fraction | none | Only the first seven digits feed the rounding. The rest are checked to be digits. |
 | Time zone name length | 64 bytes | Longer than any IANA name. Stops a large token from reaching the lookup. |
 | Steps in one `next` call | 20,000 | A safety net above the proven bound of about 5,000. |
@@ -643,9 +687,9 @@ jiff itself rejects `../../etc/passwd` and `/etc/passwd` as names that are not i
 
 `upcoming` turns `Zone::Named` into a `TimeZone` through `jiff::tz::TimeZone::get`. jiff's lookup ignores case, so `zone` compares the zone's canonical name from `iana_name()` with the token and rejects a mismatch such as `asia/seoul`.
 
-The lookup uses jiff's global database. On Unix that database reads the directory in the `TZDIR` environment variable when it is set, and otherwise a system directory such as `/usr/share/zoneinfo`. So `upcoming` with a named zone reads the file system, through jiff. `parse` and `upcoming` with `Zone::Local` or `Zone::Utc` do not.
+`upcoming` uses jiff's global database. On Unix that database reads the directory in the `TZDIR` environment variable when it is set, and otherwise a system directory such as `/usr/share/zoneinfo`. So `upcoming` with a named zone reads the file system, through jiff. `upcoming_with` uses the database the caller passes, and with `TimeZoneDatabase::bundled()` it reads no file. `parse`, and both functions with `Zone::Local` or `Zone::Utc`, do not touch a database.
 
-The crate's own code never reads the environment. A planned `clippy::disallowed_methods` entry for `std::env` and `TimeZone::system` will enforce that in `scripts/check-security.sh`. A test cannot check it, because `std::env::set_var` is `unsafe` in edition 2024 and the tests forbid `unsafe` code too.
+The crate's own code never reads the environment. `clippy.toml` lists `std::env::var`, `std::env::var_os`, `std::env::vars`, `std::env::vars_os`, `TimeZone::system`, and `TimeZone::try_system` under `disallowed-methods`, and `scripts/check-security.sh` runs clippy with warnings denied, so a call to any of them fails the gate. The two `TimeZone` entries only matter when jiff's `tz-system` feature is on somewhere in the build. A test cannot check this, because `std::env::set_var` is `unsafe` in edition 2024 and the tests forbid `unsafe` code too.
 
 ## Weight budget
 
@@ -692,7 +736,7 @@ Tabs separate the columns because an expression cannot contain a tab. Empty line
 
 `tests/oracle.rs` reads `expected.tsv` and checks each row through the public API only:
 
-- `status` is `ok` exactly when `parse` succeeds and `upcoming(base, &local)` returns `Ok`, where the test reads `local` from jiff's bundled database.
+- `status` is `ok` exactly when `parse` succeeds and `upcoming_with(base, &local, &database)` returns `Ok`, where `database` is jiff's bundled database and the test reads `local` from it.
 - `normalized` equals `event.to_string()`.
 - `never` means the first `next()` is `None`. Otherwise the first N instants, cut down to whole seconds, equal the listed instants.
 - An `unresolved` row requires only that `parse` succeeds. Its elapses are not compared, because the crate answers where systemd gives up.
@@ -747,7 +791,7 @@ Computation:
 
 ### Scripts and CI
 
-- `scripts/check-security.sh` checks that `Cargo.toml` still forbids `unsafe` code, runs clippy with the deny lints, runs `cargo deny check`, and runs `tests/robustness.rs`. It also fails when `src/` switches a lint off. It fails today because most robustness properties need the implementation.
+- `scripts/check-security.sh` checks that `Cargo.toml` still forbids `unsafe` code, runs clippy with the deny lints, runs `cargo deny check`, and runs `tests/robustness.rs`. It also fails when `src/` switches a lint off, and through `clippy.toml` when library code calls a method that reads the environment or the system time zone.
 - `scripts/check-weight.sh` is described under [Weight budget](#weight-budget).
 - `deny.toml` allows only the MIT license, which every dependency offers, and bans duplicate crate versions.
 - `.github/workflows/ci.yml` runs four jobs: `test` (format, clippy, tests, docs), `security`, `weight`, and `oracle`.
@@ -759,10 +803,11 @@ The repository carries no code comments (see `CLAUDE.md`), so the reasons behind
 - `oracle/Dockerfile` pins the base image by digest and `systemd` and `tzdata` by version. When Debian retires those versions the build fails. Raise the versions and regenerate `tests/fixtures/expected.tsv` in the same change.
 - `oracle/query.pl` treats the two systemd failures differently and stops on any failure text it does not recognize, so an unknown failure cannot pass as `error` or `unresolved`.
 - `Cargo.toml` uses an `include` allow list, so a stray file in a checkout cannot reach crates.io.
-- The dev-dependency on jiff turns on `tzdb-bundle-always`. The tests read their own zones from the bundled database. A zone named inside an expression is still looked up by the library through jiff, which prefers the host's zoneinfo.
+- The dev-dependency on jiff turns on `tzdb-bundle-always`. The tests, the oracle comparison, and the verification probe read their zones from the bundled database and pass it to `upcoming_with`, so a zone named inside an expression is looked up there too. Their results do not depend on the host's tzdata.
 - `scripts/check-weight.sh` stops when `cargo tree` fails, so an empty graph cannot read as zero dependencies. Its default-feature limit of 2 is for a Unix host. Other targets pull jiff's bundled database crates.
 - CI pins actions by commit so that a moved tag cannot change what runs. The pins are `actions/checkout` v7.0.1 and `EmbarkStudios/cargo-deny-action` v2.1.3. The `msrv` job must use the `rust-version` from `Cargo.toml`. The security job passes `--skip-deny` because the cargo-deny action runs there.
 - The slow reference in `tests/robustness.rs` can be checked against systemd. Run `cargo test --test robustness -- --ignored --nocapture print_generated > gen.tsv`, then `grep -v '^[a-z]' gen.tsv | cut -f1-3 | oracle/run.sh > gen.expected.tsv`. Column 4 of `gen.tsv` must be a prefix of column 6 of `gen.expected.tsv`, and column 4 of `gen.expected.tsv` must be `ok`. The reference gives a day counted from the end one item, because longer lists hit the limit under [Dates](#dates).
+- The slow reference in `tests/robustness.rs` tests every grid point, so it cannot express the wrap floor of the [civil search](#civil-search). Its generator gives `v/r` items in the hour, minute, and second fields only steps that end exactly at the field length (`(24 - v) % r == 0` or `(60 - v) % r == 0`), where the floor equals the minimum. The fixtures and the oracle cover the floor.
 - In `tests/robustness.rs`, the list-cap test leaves out lists of distinct days from the end. Under the limit in [Dates](#dates), at most seven distinct days from the end fit in one list, so such a list never reaches the item cap.
 - The search queries in `model`, such as `Component::next_at_or_after` and `DaySpec::mask`, are compiled only with the `jiff` feature, because only `next` calls them.
 
@@ -771,11 +816,19 @@ The repository carries no code comments (see `CLAUDE.md`), so the reasons behind
 - **Unknown time zone names fail later.** systemd rejects `daily Nowhere/Bogus` at parse time. This crate parses it, and `upcoming` returns `UnknownTimeZone`. A user who only parses sees the expression accepted.
 - **No local time zone abbreviations.** systemd accepts `daily KST` only when the process time zone uses `KST`, so its result depends on the environment. This crate cannot match that with `FromStr`. It parses the token as a name, and `upcoming` returns `UnknownTimeZone`.
 - **The local zone is an argument.** systemd reads `TZ` and `/etc/localtime`. This crate uses the `local` argument. Pass `&jiff::tz::TimeZone::system()` to match systemd.
-- **Named zones depend on the zone database.** Names are looked up in jiff's database, which on Unix is the system copy. In a minimal container without tzdata, every named zone fails with `UnknownTimeZone`. To bundle the database, turn on jiff's `tzdb-bundle-always` feature in your own `Cargo.toml`. Cargo merges the features of one jiff version. The oracle image has no `EST`, `UCT`, `Zulu`, or `W-SU` file (measured), so systemd there rejects `*-*-* 10:00 EST`, while this crate accepts it on a macOS host, which has those files.
+- **Named zones depend on the zone database.** Names are looked up in jiff's database, which on Unix is the system copy. In a minimal container without tzdata, every named zone fails with `UnknownTimeZone`. To bundle the database, turn on jiff's `tzdb-bundle-always` feature in your own `Cargo.toml`. Cargo merges the features of one jiff version. `upcoming_with` takes the database as an argument. The oracle image has no `EST`, `UCT`, `Zulu`, or `W-SU` file (measured), so systemd there rejects `*-*-* 10:00 EST`, `UCT`, `Zulu`, and `W-SU`. This crate accepts all four with jiff's bundled database (measured: `EST` at UTC−5, `UCT` and `Zulu` at UTC, `W-SU` at Moscow time), and with a system database that has those files, such as the one on macOS. `MST` and `EST5EDT` behave the same way. In lower case, `zulu` fails in both.
 
-- **The crate answers where systemd gives up.** systemd appears to bound its search (inferred from the failure, not from its code). When every candidate for many years falls in a daylight-saving gap, it fails with "Failed to determine next elapse" instead of answering. `Sun *-03-08..14 02:30 America/New_York` from a 2026 base time does this (observed). From a 2190 base time systemd answers `never` for the same expression (observed), so `never` is the true answer. This crate skips each gap in one step and returns `never` from any base time. The oracle reports such rows as `unresolved`.
+- **The crate answers where systemd gives up.** systemd appears to bound its search (inferred from the failure, not from its code). When every candidate for many years falls in a daylight-saving gap, it fails with "Failed to determine next elapse" instead of answering. `Sun *-03-08..14 02:30 America/New_York` from a 2026 base time does this (observed). From a 2190 base time systemd answers `never` for the same expression (observed), so `never` is the true answer. This crate skips each gap in one step and returns `never` from any base time. systemd also gives up on expressions whose answer is months away and whose candidates never fall in a gap: `*-5/6-21,12 7,20..21:41,11/18:26` in `Europe/London`, `Europe/Dublin`, and `America/New_York` from 2026-12-09 01:58:19 UTC, and `Sun *-7,2/9-27..28/1,14..24` in `Europe/London` from 2026-03-26 04:11:29 UTC (observed). From 2027-03-01 for the first, and in `UTC` for the second, it answers, and the answers equal this crate's (observed). The oracle reports such rows as `unresolved`.
 
 - **A gap that crosses an hour boundary.** `Pacific/Chatham` moves its clock from 02:45 to 03:45. On that day systemd, searching from before the gap, leaves out wall-clock times that exist: `*:0/5` from 02:28 elapses at 02:30, 02:35, 02:40 and then at 04:00, without 03:45, 03:50, and 03:55 (observed). `*-*-* 03:50` skips the day unless the base time is already past the gap (observed). `*:45`, `*:50`, and `*-*-* 02:45` fail with "Failed to determine next elapse" (observed). This crate applies the same rule as in every other zone: it skips the missing times and elapses at every time that exists. The fixtures hold the Chatham rows where both agree and the rows where systemd gives up. The gaps in `America/New_York` and `Australia/Lord_Howe` stay inside one hour, and there the two agree.
+
+- **Wrap floors next to a gap at midnight.** In `America/Havana`, where the clock moves from 00:00 to 01:00 on 2026-03-08, `9/14,1:4/22` from 2026-03-08 02:59:11 UTC elapses in systemd at 23:04, 23:26, and 23:48 on 03-07 and then at 01:26, without 01:04 (observed). This crate elapses at 01:04. The minute floor of the [civil search](#civil-search) is 10 there, and the hour change from 00 to 01 drops it, which is the rule that holds without a gap. In `Pacific/Chatham`, `*:15,50` from 2026-09-26 13:40 UTC elapses in systemd at 04:15 and in this crate at 03:50, as in the entry above. No rule that covers these rows and every other observation was found.
+
+- **Other daylight saving rows where the two differ.** The same random comparison found these, unrelated to the wrap floor (observed):
+  - `Europe/Dublin`, where the clock moves from 01:00 to 02:00 on 2026-03-29. When a candidate falls in that gap, systemd moves on to a later day: `1/15:*` from 2026-03-29 00:59:55 UTC first elapses at 2026-03-30 01:00 IST, and `Tue..Sun 1/21:*:*` from 00:57:33 UTC at 2026-03-31 01:00. This crate elapses at 16:00 and 22:00 on 2026-03-29. The gap in `Europe/London` at the same instant agrees for both expressions (observed).
+  - Folds where systemd takes the second pass. `1/9:37/18:*` in `Asia/Gaza` from 2026-10-23 20:59:47.806665 UTC elapses in systemd at 01:37:00 +02 and in this crate at 01:37:00 +03, the first pass. `*-*~1..3 *:*:39..45/14,27,26..59/23` in `Africa/Cairo` from 2026-10-29 20:59:32 UTC elapses in systemd at 21:59:39 UTC and in this crate at 20:59:39 UTC.
+
+- **Some fractional repetitions in seconds.** With `TZ=UTC`, `*:*:0/40.9` elapses in systemd at 40.9 s of every minute and never at 0 s (observed), and so do `0/40.1`, `0/40.25`, `0/40.7`, `0/40.99`, `0/39.9`, `0/29.9`, `0/20.9`, and `0/10.9`. `0/40.5`, `0.5/40.4`, `5/40.9`, `0/30.5`, `0/45.5`, and the whole-second steps tried (`0/7`, `0/40`, `0/41`) elapse at their start value too (observed). This crate elapses at the start value in all of them. No rule was found.
 
 ## Open questions
 

@@ -129,7 +129,7 @@ fn run(row: &Row<'_>, iterations: usize, db: &TimeZoneDatabase) -> Result<Actual
             return Actual::ParseRejected;
         };
         let normalized = event.to_string();
-        let Ok(upcoming) = event.upcoming(base, &local) else {
+        let Ok(upcoming) = event.upcoming_with(base, &local, db) else {
             return Actual::ZoneRejected { normalized };
         };
         let elapses = wants_elapses.then(|| {

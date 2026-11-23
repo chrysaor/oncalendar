@@ -1,0 +1,8 @@
+disallowed-methods = [
+    { path = "std::env::var", reason = "the library never reads the environment" },
+    { path = "std::env::var_os", reason = "the library never reads the environment" },
+    { path = "std::env::vars", reason = "the library never reads the environment" },
+    { path = "std::env::vars_os", reason = "the library never reads the environment" },
+    { path = "jiff::tz::TimeZone::system", reason = "the local zone is the caller's argument" },
+    { path = "jiff::tz::TimeZone::try_system", reason = "the local zone is the caller's argument" },
+]

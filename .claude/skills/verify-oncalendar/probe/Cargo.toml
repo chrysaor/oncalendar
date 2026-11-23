@@ -8,4 +8,4 @@ publish = false
 
 [dependencies]
 oncalendar = { path = "../../../.." }
-jiff = { version = "1", default-features = false, features = ["std", "tzdb-zoneinfo", "tzdb-bundle-platform"] }
+jiff = { version = "1", default-features = false, features = ["std", "tzdb-bundle-always"] }

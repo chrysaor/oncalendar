@@ -2,9 +2,11 @@ use core::iter::FusedIterator;
 
 use jiff::Timestamp;
 use jiff::civil::{Date, DateTime};
-use jiff::tz::{AmbiguousOffset, TimeZone};
+use jiff::tz::{AmbiguousOffset, TimeZone, TimeZoneDatabase};
 
-use crate::model::{CalendarEvent, FieldSpec, MICROS, WeekdaySet, Year};
+use crate::model::{
+    CalendarEvent, Component, FieldSpec, Hour, MICROS, Minute, Month, WeekdaySet, Year,
+};
 use crate::zone::{UnknownTimeZone, resolve};
 
 /// Search steps allowed in one `next` call. The proven bound is about 5,000.
@@ -14,9 +16,12 @@ impl CalendarEvent {
     /// The elapses strictly after `after`, in increasing order.
     ///
     /// `local` is the time zone for an expression that names none. An expression that names a
-    /// time zone ignores it. Results have microsecond precision and lie in the years 1970 to
-    /// 2199. A time that does not exist on the wall clock (a daylight saving gap) is skipped.
-    /// A time that occurs twice (a fold) elapses once, at the earliest instant after `after`.
+    /// time zone ignores it and is looked up in jiff's global time zone database,
+    /// [`jiff::tz::db`]. Results have microsecond precision and lie in the years 1970 to 2199
+    /// on the wall clock of the effective time zone, so the UTC instant can be a few hours
+    /// outside those years. A time that does not exist on the wall clock (a daylight saving
+    /// gap) is skipped. A time that occurs twice (a fold) elapses once, at the earliest instant
+    /// after `after`.
     ///
     /// The iterator can be very long (`*:*:0/0.000001` elapses every microsecond), so bound it
     /// with [`Iterator::take`] before collecting.
@@ -25,12 +30,32 @@ impl CalendarEvent {
     ///
     /// [`UnknownTimeZone`] when the expression names a time zone that the time zone database
     /// does not have.
-    pub fn upcoming<'a>(
-        &'a self,
+    pub fn upcoming(
+        &self,
         after: Timestamp,
-        local: &'a TimeZone,
-    ) -> Result<Upcoming<'a>, UnknownTimeZone> {
-        let zone = resolve(&self.zone, local)?;
+        local: &TimeZone,
+    ) -> Result<Upcoming<'_>, UnknownTimeZone> {
+        self.upcoming_with(after, local, jiff::tz::db())
+    }
+
+    /// Like [`upcoming`](CalendarEvent::upcoming), with a time zone named in the expression
+    /// looked up in `database`.
+    ///
+    /// Use it where the host has no time zone files, such as a minimal container, or to get the
+    /// same answers on every host, with [`TimeZoneDatabase::bundled`] (jiff's
+    /// `tzdb-bundle-always` feature). The name must match a name in `database` exactly, letter
+    /// case included.
+    ///
+    /// # Errors
+    ///
+    /// [`UnknownTimeZone`] when the expression names a time zone that `database` does not have.
+    pub fn upcoming_with(
+        &self,
+        after: Timestamp,
+        local: &TimeZone,
+        database: &TimeZoneDatabase,
+    ) -> Result<Upcoming<'_>, UnknownTimeZone> {
+        let zone = resolve(&self.zone, local, database)?;
         let after = after
             .as_nanosecond()
             .checked_div_euclid(1_000)
@@ -43,7 +68,8 @@ impl CalendarEvent {
     }
 }
 
-/// The elapses of a [`CalendarEvent`] after an instant. Made by [`CalendarEvent::upcoming`].
+/// The elapses of a [`CalendarEvent`] after an instant. Made by [`CalendarEvent::upcoming`]
+/// and [`CalendarEvent::upcoming_with`].
 ///
 /// Once it returns `None` it keeps returning `None`.
 #[derive(Clone, Debug)]
@@ -139,37 +165,58 @@ fn next_elapse(
 ) -> Option<Timestamp> {
     let start = Timestamp::from_microsecond(after.checked_add(1)?).ok()?;
     let mut cursor = Civil::from_datetime(zone.to_datetime(start))?;
+    let mut floor = Floor::None;
     loop {
-        let candidate = first_match_at_or_after(event, cursor, fuel)?;
+        let (candidate, kept) = first_match_at_or_after(event, cursor, floor, fuel)?;
         let datetime = candidate.to_datetime()?;
+        let (first, second) = match zone.to_ambiguous_timestamp(datetime).offset() {
+            AmbiguousOffset::Unambiguous { offset } => (offset, offset),
+            AmbiguousOffset::Fold { before, after } => (before, after),
+            AmbiguousOffset::Gap { before, .. } => {
+                cursor = gap_end(zone, datetime, before)?;
+                floor = kept;
+                continue;
+            }
+        };
         let later_than_after = |offset: jiff::tz::Offset| {
             offset
                 .to_timestamp(datetime)
                 .ok()
                 .filter(|t| t.as_microsecond() > after)
         };
-        let skip_one = || {
-            let mut next = candidate;
-            next.micros = next.micros.checked_add(1)?;
-            Some(next)
-        };
-        cursor = match zone.to_ambiguous_timestamp(datetime).offset() {
-            AmbiguousOffset::Unambiguous { offset } => match later_than_after(offset) {
-                Some(t) => return Some(t),
-                None => skip_one()?,
-            },
-            AmbiguousOffset::Fold { before, after } => {
-                match later_than_after(before).or_else(|| later_than_after(after)) {
-                    Some(t) => return Some(t),
-                    None => skip_one()?,
-                }
-            }
-            AmbiguousOffset::Gap { before, .. } => match gap_end(zone, datetime, before) {
-                Some(end) => end,
-                None => skip_one()?,
-            },
-        };
+        let found = later_than_after(first).or_else(|| later_than_after(second))?;
+        if matches!(kept, Floor::Second(_))
+            && kept != floor
+            && fell_back_between(zone, after, found)
+        {
+            cursor = Civil {
+                micros: 0,
+                ..candidate
+            };
+            floor = Floor::None;
+            continue;
+        }
+        return Some(found);
     }
+}
+
+/// Whether the wall clock is set back at an instant later than `after` and no later than `found`.
+fn fell_back_between(zone: &TimeZone, after: i64, found: Timestamp) -> bool {
+    let Some(probe) = found
+        .as_microsecond()
+        .checked_add(1)
+        .and_then(|t| Timestamp::from_microsecond(t).ok())
+    else {
+        return false;
+    };
+    let Some(transition) = zone.preceding(probe).next() else {
+        return false;
+    };
+    let at = transition.timestamp();
+    let Ok(just_before) = at.checked_sub(jiff::SignedDuration::from_micros(1)) else {
+        return false;
+    };
+    at.as_microsecond() > after && transition.offset() < zone.to_offset(just_before)
 }
 
 /// The wall-clock time at the end of the gap that holds `datetime`.
@@ -180,28 +227,76 @@ fn gap_end(zone: &TimeZone, datetime: DateTime, before: jiff::tz::Offset) -> Opt
     Civil::from_datetime(zone.to_datetime(transition))
 }
 
-/// The first wall-clock time at or after `cursor` that matches every field of `event`.
-fn first_match_at_or_after(event: &CalendarEvent, cursor: Civil, fuel: &mut u32) -> Option<Civil> {
+/// A lower bound on one time field, left by a wrap in [`first_match_at_or_after`].
+///
+/// It holds until a larger field changes in the search, and it also holds across a restart at
+/// the end of a daylight saving gap (observed).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Floor {
+    None,
+    Hour(u32),
+    Minute(u32),
+    Second(u32),
+}
+
+impl Floor {
+    /// Moves `c` up to the floor when it is below it.
+    fn raise(self, mut c: Civil) -> Civil {
+        match self {
+            Floor::Hour(hour) if c.hour < hour => {
+                c.hour = hour;
+                c.minute = 0;
+                c.micros = 0;
+            }
+            Floor::Minute(minute) if c.minute < minute => {
+                c.minute = minute;
+                c.micros = 0;
+            }
+            Floor::Second(micros) if c.micros < micros => c.micros = micros,
+            _ => {}
+        }
+        c
+    }
+}
+
+/// The first wall-clock time at or after `cursor`, raised to `floor`, that matches every field
+/// of `event`, and the floor in effect when it was found.
+///
+/// A field with no value left carries into the next larger field and starts that period at its
+/// minimum. One exception follows systemd (observed): when the hour, minute, or second field
+/// runs out at a value inside its range and the carry also runs past the end of the next larger
+/// field, the new period starts at [`Component::wrapped_floor`] instead.
+fn first_match_at_or_after(
+    event: &CalendarEvent,
+    cursor: Civil,
+    mut floor: Floor,
+    fuel: &mut u32,
+) -> Option<(Civil, Floor)> {
     let date = &event.date;
     let time = &event.time;
-    let mut c = cursor;
+    let mut c = floor.raise(cursor);
     loop {
         *fuel = fuel.checked_sub(1)?;
         let year = date.year.next_at_or_after(c.year)?;
         if year != c.year {
             c = Civil::start_of_month(year, 1);
+            floor = Floor::None;
         }
         let Some(month) = date.month.next_at_or_after(c.month) else {
             c = Civil::start_of_month(year.checked_add(1)?, 1);
+            floor = Floor::None;
             continue;
         };
         if month != c.month {
             c = Civil::start_of_month(year, month);
+            floor = Floor::None;
         }
-        let len = days_in_month(year, month)?;
-        let mask = date.day.mask(len) & weekday_mask(event.weekdays, year, month, len)?;
+        let first = Date::new(i16::try_from(year).ok()?, i8::try_from(month).ok()?, 1).ok()?;
+        let len = u32::try_from(first.days_in_month()).ok()?;
+        let mask = date.day.mask(len) & weekday_mask(event.weekdays, first, len)?;
         let Some(day) = first_day_at_or_after(mask, c.day) else {
-            c = Civil::start_of_month(year, month.checked_add(1)?);
+            c = next_month(year, month)?;
+            floor = Floor::None;
             continue;
         };
         if day != c.day {
@@ -209,36 +304,92 @@ fn first_match_at_or_after(event: &CalendarEvent, cursor: Civil, fuel: &mut u32)
                 day,
                 ..Civil::start_of_month(year, month)
             };
+            floor = Floor::None;
         }
+        let next_day = || {
+            if day < len {
+                Some(Civil {
+                    day: day.checked_add(1)?,
+                    ..Civil::start_of_month(year, month)
+                })
+            } else {
+                next_month(year, month)
+            }
+        };
         let Some(hour) = time.hour.next_at_or_after(c.hour) else {
-            c = Civil {
-                day: day.checked_add(1)?,
-                ..Civil::start_of_month(year, month)
-            };
+            floor = wrapped_floor(&time.hour, c.hour, day == len).map_or(Floor::None, Floor::Hour);
+            c = floor.raise(next_day()?);
             continue;
         };
         if hour != c.hour {
             c.hour = hour;
             c.minute = 0;
             c.micros = 0;
+            if matches!(floor, Floor::Minute(_) | Floor::Second(_)) {
+                floor = Floor::None;
+            }
         }
         let Some(minute) = time.minute.next_at_or_after(c.minute) else {
-            c.hour = hour.checked_add(1)?;
-            c.minute = 0;
-            c.micros = 0;
+            if hour < Hour::MAX {
+                c.hour = hour.checked_add(1)?;
+                c.minute = 0;
+                c.micros = 0;
+                floor = Floor::None;
+            } else {
+                floor =
+                    wrapped_floor(&time.minute, c.minute, true).map_or(Floor::None, Floor::Minute);
+                c = floor.raise(next_day()?);
+            }
             continue;
         };
         if minute != c.minute {
             c.minute = minute;
             c.micros = 0;
+            if matches!(floor, Floor::Second(_)) {
+                floor = Floor::None;
+            }
         }
         let Some(micros) = time.second.next_at_or_after(c.micros) else {
-            c.minute = minute.checked_add(1)?;
-            c.micros = 0;
+            if minute < Minute::MAX {
+                c.minute = minute.checked_add(1)?;
+                c.micros = 0;
+                floor = Floor::None;
+            } else {
+                floor =
+                    wrapped_floor(&time.second, c.micros, true).map_or(Floor::None, Floor::Second);
+                if hour < Hour::MAX {
+                    c.hour = hour.checked_add(1)?;
+                    c.minute = 0;
+                    c.micros = 0;
+                } else {
+                    c = next_day()?;
+                }
+                c = floor.raise(c);
+            }
             continue;
         };
         c.micros = micros;
-        return Some(c);
+        return Some((c, floor));
+    }
+}
+
+/// The floor a time field leaves after it ran out at `x`. `wraps` says whether the carry also
+/// runs past the end of the next larger field. Only then, and only when `x` lies inside the
+/// field, is there a floor: [`Component::wrapped_floor`].
+fn wrapped_floor<F: FieldSpec>(component: &Component<F>, x: u32, wraps: bool) -> Option<u32> {
+    if wraps && x <= F::MAX {
+        component.wrapped_floor(x)
+    } else {
+        None
+    }
+}
+
+/// The start of the first day of the month after `month`.
+fn next_month(year: u32, month: u32) -> Option<Civil> {
+    if month < Month::MAX {
+        Some(Civil::start_of_month(year, month.checked_add(1)?))
+    } else {
+        Some(Civil::start_of_month(year.checked_add(1)?, Month::MIN))
     }
 }
 
@@ -251,17 +402,12 @@ fn first_day_at_or_after(mask: u32, from: u32) -> Option<u32> {
     from.checked_add(rest.trailing_zeros())
 }
 
-fn days_in_month(year: u32, month: u32) -> Option<u32> {
-    let first = Date::new(i16::try_from(year).ok()?, i8::try_from(month).ok()?, 1).ok()?;
-    u32::try_from(first.days_in_month()).ok()
-}
-
-/// Bit `d - 1` is set when day `d` of the month falls on a day in `weekdays`.
-fn weekday_mask(weekdays: WeekdaySet, year: u32, month: u32, len: u32) -> Option<u32> {
+/// Bit `d - 1` is set when day `d` of the month that starts on `first` falls on a day in
+/// `weekdays`.
+fn weekday_mask(weekdays: WeekdaySet, first: Date, len: u32) -> Option<u32> {
     if weekdays == WeekdaySet::ALL {
         return Some(u32::MAX);
     }
-    let first = Date::new(i16::try_from(year).ok()?, i8::try_from(month).ok()?, 1).ok()?;
     let mut weekday = u32::try_from(first.weekday().to_monday_zero_offset()).ok()?;
     let mut mask = 0_u32;
     for day in 0..len {
@@ -286,6 +432,7 @@ mod tests {
 
     #[test]
     fn the_fixture_corpus_never_runs_out_of_fuel() {
+        let database = TimeZoneDatabase::bundled();
         let mut least_left = FUEL;
         let mut searches = 0_u32;
         for line in EXPECTED.lines().filter(|line| !line.starts_with('#')) {
@@ -295,12 +442,11 @@ mod tests {
             else {
                 continue;
             };
-            let (Ok(event), Ok(local)) =
-                (expression.parse::<CalendarEvent>(), TimeZone::get(local))
+            let (Ok(event), Ok(local)) = (expression.parse::<CalendarEvent>(), database.get(local))
             else {
                 continue;
             };
-            let Ok(zone) = resolve(&event.zone, &local) else {
+            let Ok(zone) = resolve(&event.zone, &local, &database) else {
                 continue;
             };
             for base in BASES {

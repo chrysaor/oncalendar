@@ -9,6 +9,9 @@ use crate::model::{
 /// Longer than any IANA time zone name.
 const MAX_ZONE_LEN: usize = 64;
 
+/// The largest number systemd accepts, 2^31 - 1. A seconds number counts in microseconds.
+const MAX_NUMBER: u32 = 2_147_483_647;
+
 const WEEKDAYS: [(&str, &str); 7] = [
     ("mon", "monday"),
     ("tue", "tuesday"),
@@ -36,40 +39,23 @@ impl FromStr for CalendarEvent {
 
     /// Parses an expression in the grammar of `systemd.time(7)`, "Calendar Events".
     ///
-    /// Leading and trailing whitespace is an error. Each numeric field takes at most 241 list
-    /// items. A time zone name is checked for its form only.
+    /// Leading whitespace is an error, and so is trailing whitespace after a time or a
+    /// shorthand. Each numeric field takes at most 241 list items. A time zone name is checked
+    /// for its form only.
     fn from_str(input: &str) -> Result<Self, ParseError> {
         if input.is_empty() {
             return Err(ParseError::new(ErrorKind::Empty, 0));
         }
         let error = match expression(input) {
-            Ok(event) => return Ok(event.with_zone(Zone::Local)),
+            Ok(event) => return Ok(event),
             Err(error) => error,
         };
         let Some((head, zone)) = split_zone(input) else {
             return Err(error);
         };
-        expression(head)
-            .map(|event| event.with_zone(zone))
-            .map_err(|_| error)
-    }
-}
-
-/// An expression without its time zone.
-struct Spec {
-    weekdays: WeekdaySet,
-    date: DateSpec,
-    time: TimeSpec,
-}
-
-impl Spec {
-    fn with_zone(self, zone: Zone) -> CalendarEvent {
-        CalendarEvent {
-            weekdays: self.weekdays,
-            date: self.date,
-            time: self.time,
-            zone,
-        }
+        let mut event = expression(head).map_err(|_| error)?;
+        event.zone = zone;
+        Ok(event)
     }
 }
 
@@ -96,18 +82,20 @@ fn is_zone_name(name: &str) -> bool {
         && name.split('/').all(|component| !component.is_empty())
 }
 
-fn expression(text: &str) -> Result<Spec, ParseError> {
+/// An expression without a time zone. Its zone is [`Zone::Local`].
+fn expression(text: &str) -> Result<CalendarEvent, ParseError> {
     if text.starts_with(' ') {
         return Err(ParseError::new(ErrorKind::Whitespace, 0));
     }
-    if text.ends_with(' ') {
-        let at = text.len().saturating_sub(1);
-        return Err(ParseError::new(ErrorKind::Whitespace, at));
-    }
+    let trimmed = text.trim_end_matches(' ');
+    let trailing_space = ParseError::new(ErrorKind::Whitespace, trimmed.len());
     if let Some((_, expansion)) = SHORTHANDS
         .iter()
-        .find(|(name, _)| text.eq_ignore_ascii_case(name))
+        .find(|(name, _)| trimmed.eq_ignore_ascii_case(name))
     {
+        if trimmed.len() != text.len() {
+            return Err(trailing_space);
+        }
         return expression(expansion);
     }
 
@@ -134,6 +122,7 @@ fn expression(text: &str) -> Result<Spec, ParseError> {
         minute: zero(0)?,
         second: zero(0)?,
     };
+    let has_time = token.is_some();
     if let Some((at, word)) = token {
         time = time_spec(word, at)?;
         token = tokens.next();
@@ -141,10 +130,14 @@ fn expression(text: &str) -> Result<Spec, ParseError> {
     if let Some((at, _)) = token {
         return Err(ParseError::new(ErrorKind::Syntax, at));
     }
-    Ok(Spec {
+    if has_time && trimmed.len() != text.len() {
+        return Err(trailing_space);
+    }
+    Ok(CalendarEvent {
         weekdays,
         date,
         time,
+        zone: Zone::Local,
     })
 }
 
@@ -300,6 +293,7 @@ impl Grammar for Second {
         whole
             .checked_mul(MICROS)
             .and_then(|w| w.checked_add(micros))
+            .filter(|micros| *micros <= MAX_NUMBER)
             .ok_or(out_of_range)
     }
 }
@@ -321,7 +315,7 @@ fn round_fraction(fraction: &str) -> Result<u32, ErrorKind> {
     Ok(micros)
 }
 
-/// Decimal digits only. Overflow is out of range.
+/// Decimal digits only. A value above [`MAX_NUMBER`] is out of range.
 fn integer(text: &str, field: crate::error::Field) -> Result<u32, ErrorKind> {
     if text.is_empty() || !text.bytes().all(|b| b.is_ascii_digit()) {
         return Err(ErrorKind::Number);
@@ -330,6 +324,7 @@ fn integer(text: &str, field: crate::error::Field) -> Result<u32, ErrorKind> {
         value
             .checked_mul(10)
             .and_then(|v| v.checked_add(u32::from(b.saturating_sub(b'0'))))
+            .filter(|v| *v <= MAX_NUMBER)
             .ok_or(ErrorKind::OutOfRange(field))
     })
 }

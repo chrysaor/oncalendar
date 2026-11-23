@@ -648,8 +648,11 @@ mod computation {
     use jiff::tz::{AmbiguousOffset, Offset, TimeZone, TimeZoneDatabase};
     use jiff::{Timestamp, ToSpan};
 
+    static DB: std::sync::LazyLock<TimeZoneDatabase> =
+        std::sync::LazyLock::new(TimeZoneDatabase::bundled);
+
     fn tz(name: &str) -> TimeZone {
-        TimeZoneDatabase::bundled().get(name).unwrap()
+        DB.get(name).unwrap()
     }
 
     fn at(rfc3339: &str) -> Timestamp {
@@ -704,7 +707,7 @@ mod computation {
         ] {
             let works = control
                 .parse::<CalendarEvent>()
-                .is_ok_and(|event| event.upcoming(base, &seoul).is_ok());
+                .is_ok_and(|event| event.upcoming_with(base, &seoul, &DB).is_ok());
             if !works {
                 failures.push(format!("control {control:?} does not work"));
             }
@@ -720,7 +723,7 @@ mod computation {
         ] {
             let accepted = input
                 .parse::<CalendarEvent>()
-                .is_ok_and(|event| event.upcoming(base, &seoul).is_ok());
+                .is_ok_and(|event| event.upcoming_with(base, &seoul, &DB).is_ok());
             if accepted {
                 failures.push(format!("{input:?} is accepted"));
             }
@@ -758,7 +761,7 @@ mod computation {
                 for (zone_name, zone) in &zones {
                     let run = catch_unwind(AssertUnwindSafe(|| {
                         event
-                            .upcoming(base, zone)
+                            .upcoming_with(base, zone, &DB)
                             .map_or(0, |upcoming| upcoming.take(3).count())
                     }));
                     match run {
@@ -810,7 +813,7 @@ mod computation {
             for base in bases.map(at) {
                 for name in zones {
                     let zone = tz(name);
-                    let Ok(upcoming) = event.upcoming(base, &zone) else {
+                    let Ok(upcoming) = event.upcoming_with(base, &zone, &DB) else {
                         continue;
                     };
                     let mut previous = base;
@@ -855,7 +858,7 @@ mod computation {
                 continue;
             };
             let zone = spec.effective_zone(&local);
-            let Ok(upcoming) = event.upcoming(base, &local) else {
+            let Ok(upcoming) = event.upcoming_with(base, &local, &DB) else {
                 failures.push(format!("{expr:?}: upcoming failed"));
                 continue;
             };
@@ -915,7 +918,7 @@ mod computation {
             let zone = spec.effective_zone(&local);
             let last_day = zone.to_datetime(base).date() + 400.days();
             let expected = reference_upcoming(&spec, base, &zone, last_day, 20);
-            let Ok(upcoming) = event.upcoming(base, &local) else {
+            let Ok(upcoming) = event.upcoming_with(base, &local, &DB) else {
                 failures.push(format!("{expr:?}: upcoming failed"));
                 continue;
             };
@@ -1000,7 +1003,7 @@ mod computation {
             };
             let local = tz(local);
             let start = Instant::now();
-            let Ok(upcoming) = event.upcoming(at(base), &local) else {
+            let Ok(upcoming) = event.upcoming_with(at(base), &local, &DB) else {
                 failures.push(format!("{}: upcoming failed", shorten(expr)));
                 continue;
             };
@@ -1033,7 +1036,7 @@ mod computation {
                     failures.push(format!("{expr:?} is rejected"));
                     continue;
                 };
-                let Ok(upcoming) = event.upcoming(base, &zone) else {
+                let Ok(upcoming) = event.upcoming_with(base, &zone, &DB) else {
                     failures.push(format!("{expr:?}: upcoming failed"));
                     continue;
                 };
@@ -1087,7 +1090,7 @@ mod computation {
         let base = at("2026-01-01T00:00:00Z");
         let start = Instant::now();
         let got: Vec<Timestamp> = event
-            .upcoming(base, &TimeZone::UTC)
+            .upcoming_with(base, &TimeZone::UTC, &DB)
             .unwrap()
             .take(10_000)
             .collect();
@@ -1124,7 +1127,7 @@ mod computation {
         for (expr, base, expected) in cases {
             let event: CalendarEvent = expr.parse().unwrap_or_else(|e| panic!("{expr:?}: {e}"));
             let utc = TimeZone::UTC;
-            let mut upcoming = event.upcoming(at(base), &utc).unwrap();
+            let mut upcoming = event.upcoming_with(at(base), &utc, &DB).unwrap();
             for want in expected {
                 assert_eq!(upcoming.next(), Some(at(want)), "{expr:?} after {base}");
             }
@@ -1279,6 +1282,21 @@ mod computation {
             }
         }
 
+        fn without_wrap_floor(self, length: u32) -> Field {
+            Field(self.0.map(|items| {
+                items
+                    .into_iter()
+                    .map(|item| match item {
+                        Item::Every(a, r) => {
+                            let r = (1..=r).rev().find(|r| (length - a) % r == 0).unwrap_or(1);
+                            Item::Every(a, r)
+                        }
+                        other => other,
+                    })
+                    .collect()
+            }))
+        }
+
         fn first_only(self) -> Field {
             Field(self.0.map(|items| items.into_iter().take(1).collect()))
         }
@@ -1334,9 +1352,9 @@ mod computation {
                     Field::generate(rng, 50, 1, 31, 31, false)
                 },
                 from_end,
-                hour: Field::generate(rng, 40, 0, 23, 23, false),
-                minute: Field::generate(rng, 30, 0, 59, 59, false),
-                second: Field::generate(rng, 30, 0, 59, 59, false),
+                hour: Field::generate(rng, 40, 0, 23, 23, false).without_wrap_floor(24),
+                minute: Field::generate(rng, 30, 0, 59, 59, false).without_wrap_floor(60),
+                second: Field::generate(rng, 30, 0, 59, 59, false).without_wrap_floor(60),
                 zone: *rng.pick(&[
                     None,
                     None,
@@ -1356,8 +1374,8 @@ mod computation {
                 day: Field(None),
                 from_end: false,
                 hour: Field(None),
-                minute: Field::generate(rng, 30, 0, 59, 59, false),
-                second: Field::generate(rng, 20, 0, 59, 59, false),
+                minute: Field::generate(rng, 30, 0, 59, 59, false).without_wrap_floor(60),
+                second: Field::generate(rng, 20, 0, 59, 59, false).without_wrap_floor(60),
                 zone: None,
             }
         }

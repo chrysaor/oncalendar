@@ -70,7 +70,7 @@ America/New_York	2026-01-01 00:00:00 UTC	*-03-08 02:30
 America/New_York	2026-01-01 00:00:00 UTC	*-11-01 01:30
 America/New_York	2026-01-01 00:00:00 UTC	daily
 
-# Whitespace: runs between elements pass, leading, trailing and before the zone fail
+# Whitespace: runs between elements pass; a leading space fails; after a time or a shorthand, a trailing space or a run before the zone fails
 UTC	2026-01-01 00:00:00 UTC	Mon   *-*-*   10:00
 UTC	2026-01-01 00:00:00 UTC	Mon  10:00
 UTC	2026-01-01 00:00:00 UTC	Mon *-*-*  10:00
@@ -436,3 +436,148 @@ America/New_York	2026-03-08 06:55:00 UTC	*:00
 America/New_York	2026-03-08 06:55:00 UTC	*-*-* 03:00
 America/New_York	2026-03-08 06:55:00 UTC	*-*-* 02:59
 America/New_York	2026-03-08 06:55:00 UTC	*:0/30
+
+# Range ends are checked after they shrink to the last value reached
+UTC	2026-01-01 00:00:00 UTC	*:*:10..70/100
+UTC	2026-01-01 00:00:00 UTC	*:10..65/20
+UTC	2026-01-01 00:00:00 UTC	*-*-1..32/30
+UTC	2026-01-01 00:00:00 UTC	0..24/30:00
+UTC	2026-01-01 00:00:00 UTC	2020..2200/179-01-01
+UTC	2026-01-01 00:00:00 UTC	*-*~28..40/30
+UTC	2026-01-01 00:00:00 UTC	*-*~1,24..29/30
+UTC	2026-01-01 00:00:00 UTC	*:*:0.5..60
+UTC	2026-01-01 00:00:00 UTC	*:*:58.5..60
+UTC	2026-01-01 00:00:00 UTC	*:*:10..60/50
+UTC	2026-01-01 00:00:00 UTC	*:10..70/20
+UTC	2026-01-01 00:00:00 UTC	*-*-1..32/31
+UTC	2026-01-01 00:00:00 UTC	*-*~5..40/30
+UTC	2026-01-01 00:00:00 UTC	*:*:0.5..61
+UTC	2026-01-01 00:00:00 UTC	*:*:58.5..60.5
+UTC	2026-01-01 00:00:00 UTC	*-*~5..40/30,1
+UTC	2026-01-01 00:00:00 UTC	*-*~1,5..31/30
+
+# Numbers above 2147483647 are rejected; seconds stop at 2147.483647
+UTC	2026-01-01 00:00:00 UTC	*:0..10/2147483647
+UTC	2026-01-01 00:00:00 UTC	*:0..10/2147483648
+UTC	2026-01-01 00:00:00 UTC	*-*-1..5/4294967295
+UTC	2026-01-01 00:00:00 UTC	0..10/3000000000:00
+UTC	2026-01-01 00:00:00 UTC	*:*:0..10/2147.483647
+UTC	2026-01-01 00:00:00 UTC	*:*:0..10/2147.483648
+UTC	2026-01-01 00:00:00 UTC	*:*:0..10/2148
+UTC	2026-01-01 00:00:00 UTC	2020..2030/3000000000-01-01
+UTC	2026-01-01 00:00:00 UTC	*-*-1..5/2147483647
+UTC	2026-01-01 00:00:00 UTC	*:*:0..10/2147.4836474
+UTC	2026-01-01 00:00:00 UTC	*:*:0..10/2147.4836475
+
+# Whitespace without a time: trailing spaces and runs of spaces before the zone pass
+UTC	2026-01-01 00:00:00 UTC	*-*-* 
+UTC	2026-01-01 00:00:00 UTC	2026-01-01  
+UTC	2026-01-01 00:00:00 UTC	Mon 
+UTC	2026-01-01 00:00:00 UTC	Mon, 
+UTC	2026-01-01 00:00:00 UTC	Mon,Tue 
+UTC	2026-01-01 00:00:00 UTC	Mon  *-*-* 
+UTC	2026-01-01 00:00:00 UTC	*-*-*  UTC
+UTC	2026-01-01 00:00:00 UTC	*-*-*   UTC
+UTC	2026-01-01 00:00:00 UTC	Mon  UTC
+UTC	2026-01-01 00:00:00 UTC	Mon,  UTC
+UTC	2026-01-01 00:00:00 UTC	*-*-*  Asia/Seoul
+UTC	2026-01-01 00:00:00 UTC	*-*-* 10:00 
+UTC	2026-01-01 00:00:00 UTC	10:00 
+UTC	2026-01-01 00:00:00 UTC	daily 
+UTC	2026-01-01 00:00:00 UTC	*-*-* UTC 
+UTC	2026-01-01 00:00:00 UTC	Mon UTC 
+UTC	2026-01-01 00:00:00 UTC	weekly  UTC
+UTC	2026-01-01 00:00:00 UTC	*-*-* 10:00  UTC
+UTC	2026-01-01 00:00:00 UTC	 *-*-*
+UTC	2026-01-01 00:00:00 UTC	3-*-1..5/2,1..5/3 
+
+# A repetition in the hour, minute or second field that runs past the end of its field, when the carry also wraps the next larger field, restarts at the overflow minus the field length
+UTC	2026-01-10 23:50:00 UTC	*:0/24
+UTC	2026-01-10 23:48:00 UTC	*:0/24
+UTC	2026-01-10 22:50:00 UTC	*:0/24
+UTC	2026-01-10 10:50:00 UTC	*:0/24
+UTC	2026-01-10 23:50:00 UTC	*:0/45
+UTC	2026-01-10 23:56:00 UTC	*:5/24
+UTC	2026-01-10 23:50:00 UTC	*:20/25
+UTC	2026-01-10 23:50:00 UTC	*:10/25
+UTC	2026-01-10 23:50:00 UTC	*:0/59
+UTC	2026-01-10 23:50:00 UTC	*:0/24,5
+UTC	2026-01-10 23:50:00 UTC	*:0/24,10/25
+UTC	2026-01-10 23:50:00 UTC	*:0/24,0/45
+UTC	2026-01-10 23:50:00 UTC	*:0/24,13/23
+UTC	2026-01-10 23:50:00 UTC	*:0..30/24
+UTC	2026-01-10 23:50:00 UTC	*:0,24,48
+UTC	2026-01-10 23:50:00 UTC	*:0/24:30
+UTC	2026-01-10 23:50:00 UTC	*:0/24:10/7
+UTC	2026-01-10 23:48:59 UTC	*:0/24:*
+UTC	2026-01-10 22:50:00 UTC	0..22:0/24
+UTC	2026-01-10 23:50:00 UTC	1..23:0/24
+UTC	2026-01-10 23:50:00 UTC	Sat,Sun *:0/24
+UTC	2026-01-10 23:50:00 UTC	Sun *:0/24
+UTC	2026-01-10 23:50:00 UTC	*-*-10,11 *:0/24
+UTC	2026-01-10 23:50:00 UTC	*-*-10,12 *:0/24
+UTC	2026-01-31 23:50:00 UTC	*:0/24
+UTC	2026-12-31 23:50:00 UTC	*:0/24
+UTC	2199-12-31 23:50:00 UTC	*:0/24
+UTC	2026-01-10 10:20:57 UTC	*:*:0/7
+UTC	2026-01-10 10:59:57 UTC	*:*:0/7
+UTC	2026-01-10 23:59:50 UTC	*:*:0/7
+UTC	2026-01-10 10:58:57 UTC	*:0..58:0/7
+UTC	2026-01-10 10:59:57 UTC	*:0/59:0/7
+UTC	2026-01-10 10:59:57 UTC	*:5,59:0/7
+UTC	2026-01-10 22:59:57 UTC	22,23:*:0/7
+UTC	2026-01-10 22:59:57 UTC	22:*:0/7
+UTC	2026-01-10 10:59:50 UTC	*:*:0/7.7
+UTC	2026-01-10 10:59:56.5 UTC	*:*:0.5/7
+UTC	2026-01-10 10:59:58 UTC	*:*:3/11,5/13
+UTC	2026-01-10 10:59:58 UTC	*:*:0/7,2..4
+UTC	2026-01-10 10:59:58 UTC	*:*:0/7,0..50/25
+UTC	2026-01-10 21:30:00 UTC	0/7:00
+UTC	2026-01-30 20:30:00 UTC	0/5:00
+UTC	2026-01-31 20:30:00 UTC	0/5:00
+UTC	2026-12-31 20:30:00 UTC	0/5:00
+UTC	2026-02-28 20:30:00 UTC	2/5:00
+UTC	2026-12-30 00:00:00 UTC	*-*-5/12
+UTC	2026-11-15 00:00:00 UTC	*-1/5-01
+America/New_York	2026-10-31 03:50:00 UTC	*:0/24
+Asia/Kolkata	2027-07-31 23:55:21 UTC	*-*-* 18..23:*:22/30,18..23/5 America/New_York
+Europe/London	2026-03-28 23:30:00 UTC	*-*-* *:9,9/44,34:55..58
+
+# A wrap floor across a daylight saving change: it survives a restart at the end of a gap; a seconds floor is dropped when the clock is set back on the way
+America/Havana	2026-03-08 04:50:00 UTC	*:0/24
+America/Havana	2026-03-08 04:50:00 UTC	*:20/25
+America/Havana	2026-03-08 04:59:57 UTC	*:*:0/7
+America/Havana	2026-03-08 04:59:57 UTC	*:0/24:0/7
+America/Santiago	2026-09-06 03:59:57 UTC	*:*:0/7
+America/Santiago	2026-04-05 02:50:00 UTC	*:0/24
+America/Santiago	2026-04-05 02:59:57 UTC	*:*:0/7
+America/Santiago	2026-04-05 02:59:57 UTC	*:0/24:0/7
+America/Santiago	2026-04-05 03:59:57 UTC	*:*:0/7
+America/New_York	2026-03-08 06:59:57 UTC	*:*:0/7
+America/New_York	2026-03-08 06:59:57 UTC	*:*:3/11
+America/New_York	2026-11-01 05:59:57 UTC	*:*:0/7
+America/New_York	2026-11-01 05:59:57 UTC	*:*:3/11
+America/New_York	2026-11-01 06:59:57 UTC	*:*:0/7
+America/New_York	2026-11-01 06:59:57 UTC	*:*:3/11
+Europe/London	2026-03-29 00:59:57 UTC	*:*:0/7
+Europe/London	2026-10-25 00:59:57 UTC	*:*:0/7
+Europe/London	2026-10-25 00:59:57 UTC	*:*:3/11
+Europe/London	2026-10-25 01:59:57 UTC	*:*:0/7
+Australia/Lord_Howe	2026-10-03 15:29:57 UTC	*:*:0/7
+Australia/Lord_Howe	2026-04-04 14:59:57 UTC	*:*:0/7
+Australia/Lord_Howe	2026-04-04 14:59:57 UTC	*:*:3/11
+Australia/Lord_Howe	2026-10-03 15:20:00 UTC	*:20,45
+Australia/Lord_Howe	2026-10-03 15:00:00 UTC	*:20,45
+Australia/Lord_Howe	2026-10-03 15:20:00 UTC	*:25,50
+Europe/Dublin	2026-10-25 00:59:20 UTC	*:*:2/38
+Asia/Tehran	2022-09-21 19:28:30 UTC	*:*:10/38
+
+# systemd also gives up far from any gap; from a later base time it agrees
+Europe/London	2026-03-26 04:11:29 UTC	Sun *-7,2/9-27..28/1,14..24
+UTC	2026-03-26 04:11:29 UTC	Sun *-7,2/9-27..28/1,14..24
+Europe/Dublin	2026-12-09 01:58:19 UTC	*-5/6-21,12 7,20..21:41,11/18:26
+Europe/Dublin	2027-03-01 00:00:00 UTC	*-5/6-21,12 7,20..21:41,11/18:26
+Europe/London	2026-12-09 01:58:19 UTC	*-5/6-21,12 7,20..21:41,11/18:26
+Europe/London	2027-03-01 00:00:00 UTC	*-5/6-21,12 7,20..21:41,11/18:26
+America/New_York	2026-12-09 01:58:19 UTC	*-5/6-21,12 7,20..21:41,11/18:26
+America/New_York	2027-03-01 00:00:00 UTC	*-5/6-21,12 7,20..21:41,11/18:26

@@ -1,14 +1,15 @@
 use core::fmt;
 
-use jiff::tz::TimeZone;
+use jiff::tz::{TimeZone, TimeZoneDatabase};
 
 use crate::model::Zone;
 
 /// The time zone named in the expression is not in the time zone database.
 ///
 /// Parsing accepts any well-formed name, so this is reported by
-/// [`CalendarEvent::upcoming`](crate::CalendarEvent::upcoming). Local time zone abbreviations
-/// such as `KST` are not supported and are reported the same way.
+/// [`CalendarEvent::upcoming`](crate::CalendarEvent::upcoming) and
+/// [`CalendarEvent::upcoming_with`](crate::CalendarEvent::upcoming_with). Local time zone
+/// abbreviations such as `KST` are not supported and are reported the same way.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UnknownTimeZone {
     _private: (),
@@ -25,14 +26,19 @@ impl fmt::Display for UnknownTimeZone {
 
 impl std::error::Error for UnknownTimeZone {}
 
-/// The zone the search runs in. A named zone must match a database name exactly, case included.
-pub(crate) fn resolve(zone: &Zone, local: &TimeZone) -> Result<TimeZone, UnknownTimeZone> {
+/// The zone the search runs in. A named zone must match a name in `database` exactly, case
+/// included.
+pub(crate) fn resolve(
+    zone: &Zone,
+    local: &TimeZone,
+    database: &TimeZoneDatabase,
+) -> Result<TimeZone, UnknownTimeZone> {
     let unknown = UnknownTimeZone { _private: () };
     match zone {
         Zone::Local => Ok(local.clone()),
         Zone::Utc => Ok(TimeZone::UTC),
         Zone::Named(name) => {
-            let found = TimeZone::get(name).map_err(|_| unknown.clone())?;
+            let found = database.get(name).map_err(|_| unknown.clone())?;
             if found.iana_name() == Some(&**name) {
                 Ok(found)
             } else {
