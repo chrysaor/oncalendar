@@ -619,7 +619,7 @@ The crate promises:
 | Time zone name length | 64 bytes | Longer than any IANA name. Stops a large token from reaching the lookup. |
 | Steps in one `next` call | 20,000 | A safety net above the proven bound of about 5,000. |
 
-There is no limit on the input length. With the item cap, memory is bounded, and the parser is linear in time. systemd rejected several long inputs of 2,001 characters and more. The observations do not show whether the item cap or a separate length limit caused that. See open question 16.
+There is no limit on the input length. With the item cap, memory is bounded, and the parser is linear in time. systemd shows no length limit either: it accepts 1,000 weekday items, 3,000 spaces between parts, and 3,000 leading zeros (observed).
 
 The item cap applies per field. An expression with 300 items split between the minutes and seconds fields, each field under the cap, is accepted by systemd (observed).
 
@@ -775,6 +775,8 @@ The repository carries no code comments (see `CLAUDE.md`), so the reasons behind
 
 - **The crate answers where systemd gives up.** systemd appears to bound its search (inferred from the failure, not from its code). When every candidate for many years falls in a daylight-saving gap, it fails with "Failed to determine next elapse" instead of answering. `Sun *-03-08..14 02:30 America/New_York` from a 2026 base time does this (observed). From a 2190 base time systemd answers `never` for the same expression (observed), so `never` is the true answer. This crate skips each gap in one step and returns `never` from any base time. The oracle reports such rows as `unresolved`.
 
+- **A gap that crosses an hour boundary.** `Pacific/Chatham` moves its clock from 02:45 to 03:45. On that day systemd, searching from before the gap, leaves out wall-clock times that exist: `*:0/5` from 02:28 elapses at 02:30, 02:35, 02:40 and then at 04:00, without 03:45, 03:50, and 03:55 (observed). `*-*-* 03:50` skips the day unless the base time is already past the gap (observed). `*:45`, `*:50`, and `*-*-* 02:45` fail with "Failed to determine next elapse" (observed). This crate applies the same rule as in every other zone: it skips the missing times and elapses at every time that exists. The fixtures hold the Chatham rows where both agree and the rows where systemd gives up. The gaps in `America/New_York` and `Australia/Lord_Howe` stay inside one hour, and there the two agree.
+
 ## Open questions
 
 These have not been observed yet. Each one closes inside `model`, `parse`, `format`, or `next` and does not change the public API. Answer them with new fixture rows.
@@ -798,21 +800,19 @@ Answered since the first draft, all observed and all in the fixtures:
 - A stepped range has no `start + step <= max` check. `*:50..59/20` prints as `*:50`.
 - Year expansion goes by value, not by digit count. `0070-01-01` is 1970, and `12/2-01-01` prints as `2012/2-01-01`.
 
-Grammar:
+Answered with a time zone library as a calculator for transition times and the oracle for the answers, all in the fixtures:
 
-9. Tabs inside the expression. The oracle reads tab-separated cases, so it cannot be asked. The crate treats only the space as a separator and rejects a tab.
+- Zones with a half-hour transition. `Australia/Lord_Howe` agrees with the search rule minute by minute around its gap and its fold.
+- Several candidates inside one gap. `*-*-* 02,03:0/30 America/New_York` on the transition day elapses at 03:00 and 03:30 only.
+- A day that does not exist. `Pacific/Apia` skipped 2011-12-30. `*-12-30` first elapses in 2012, and `2011-12-30 12:00` never elapses.
+- Weekdays follow the zone of the expression, also when the local zone has daylight saving time of its own. `Mon *-*-* 00:30 Pacific/Auckland` with `TZ=America/New_York` elapses on Sundays in UTC.
+- The end of 2199. The last elapse is 2199-12-31 23:59:59.999999 in the effective zone. A local time in 2199 elapses even when its UTC instant is in 2200, such as `*-12-31 23:00` in `America/New_York`.
+- Input length. systemd has no length limit that was found. It accepts 1,000 weekday items, 3,000 spaces between parts, and 3,000 leading zeros.
+- Base times before 1970. systemd rejects such a base time before it reads the expression, so the oracle cannot be asked. The crate starts the search at 1970-01-01.
 
-Computation:
+Still open:
 
-10. Gaps with several candidates inside, and transitions of 30 or 45 minutes (`Australia/Lord_Howe`, `Pacific/Chatham`). Only one Lord Howe fold has been observed.
-11. A day that does not exist at all, such as 2011-12-30 in `Pacific/Apia`, with `*-12-30`.
-12. Whether weekdays use the expression's zone when both the expression's zone and the local zone have daylight saving time. `weekly Pacific/Auckland` suggests they do.
-13. Base times before 1970. First check whether systemd accepts such a base time.
-14. The 2199 boundary. Whether `2199-12-31 23:59:59.999999` elapses, and what happens to a local 2199 time that is in 2200 in UTC.
-15. Whether the tzdata in the oracle image and the host's tzdata disagree on any fixture date. jiff prefers the system zoneinfo over a bundled copy, so turning on `tzdb-bundle-always` in dev-dependencies does not make tests independent of the host. A future fixture header could record the tzdata version.
-16. Whether systemd has an input length limit apart from the item cap.
-17. Names that are both abbreviations and database entries, such as `EST`, `MST`, and `HST`, in an oracle image that has those files. The current image has no `EST` file, so its rejection says nothing about abbreviations.
-
-Only if the decision to reject local abbreviations is reversed:
-
-18. The exact meaning of a local abbreviation. In January, `daily EDT` never elapses in `America/New_York`, and in July `daily EST` never elapses either.
+1. Tabs inside the expression. The oracle reads tab-separated cases, so it cannot be asked. The crate treats only the space as a separator and rejects a tab.
+2. Whether the tzdata in the oracle image and the host's tzdata disagree on any fixture date. jiff prefers the system zoneinfo over a bundled copy, so turning on `tzdb-bundle-always` in dev-dependencies does not make tests independent of the host. A future fixture header could record the tzdata version.
+3. Names that are both abbreviations and database entries, such as `EST`, `MST`, and `HST`, in an oracle image that has those files. The current image has no `EST` file, so its rejection says nothing about abbreviations.
+4. Only if the decision to reject local abbreviations is reversed: the exact meaning of a local abbreviation. In January, `daily EDT` never elapses in `America/New_York`, and in July `daily EST` never elapses either.
