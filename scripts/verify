@@ -129,6 +129,7 @@ gates)
 	gate security scripts/check-security.sh
 	gate weight scripts/check-weight.sh
 	gate no-std scripts/check-no-std.sh
+	gate cli scripts/check-cli.sh
 	gate oracle-drift oracle/check.sh
 	echo "evidence: $dir"
 	exit "$fail"

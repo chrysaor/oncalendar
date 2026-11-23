@@ -1,0 +1,44 @@
+[package]
+name = "oncalendar-cli"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Check systemd OnCalendar= expressions and list when they elapse next, on any machine."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/chrysaor/oncalendar"
+readme = "README.md"
+keywords = ["systemd", "calendar", "timer", "cli", "schedule"]
+categories = ["command-line-utilities", "date-and-time"]
+include = ["/src", "/README.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
+
+[workspace]
+
+[[bin]]
+name = "oncalendar"
+path = "src/main.rs"
+
+[dependencies]
+oncalendar = { version = "0.1.0", path = "..", default-features = false, features = ["jiff"] }
+jiff = { version = "1", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo", "tzdb-bundle-always"] }
+
+[profile.release]
+strip = true
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+unreachable = "deny"
+todo = "deny"
+unimplemented = "deny"
+indexing_slicing = "deny"
+string_slice = "deny"
+arithmetic_side_effects = "deny"
+cast_possible_truncation = "deny"
+cast_possible_wrap = "deny"
+cast_sign_loss = "deny"
+print_stdout = "deny"
+print_stderr = "deny"

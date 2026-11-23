@@ -15,14 +15,14 @@ report() {
 
 report "comments in src/ (only /// and //! documentation is allowed):" \
 	"$(grep -rnE '^[[:space:]]*//([^/!]|$)|/\*' src || true)"
-report "comments in tests, benches, the probe, or the fuzz targets:" \
-	"$(grep -rnE '^[[:space:]]*//|/\*' tests benches scripts/probe/src fuzz/fuzz_targets --include='*.rs' || true)"
+report "comments in tests, benches, the probe, the command-line tool, or the fuzz targets:" \
+	"$(grep -rnE '^[[:space:]]*//|/\*' tests benches scripts/probe/src cli/src cli/tests fuzz/fuzz_targets --include='*.rs' || true)"
 report "comments in scripts and configuration:" \
 	"$(grep -nE '^[[:space:]]*#([^!]|$)|[[:space:]]#[[:space:]]' \
 		scripts/*.sh oracle/*.sh oracle/query.pl oracle/Dockerfile \
 		scripts/verify \
 		Cargo.toml deny.toml .github/workflows/*.yml .github/dependabot.yml .github/ISSUE_TEMPLATE/*.yml fuzz/Cargo.toml \
-		scripts/probe/Cargo.toml || true)"
+		scripts/probe/Cargo.toml cli/Cargo.toml cli/clippy.toml || true)"
 
 [ "$fail" -eq 0 ] && echo "no comments: PASS"
 exit "$fail"

@@ -33,4 +33,5 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Reject invalid input](./reject-invalid-input.md) covers errors, input limits, and hostile input.
 - [Next elapse](./next-elapse.md) covers the iterator of upcoming times, `never`, and sub-second results.
 - [Time zones and daylight saving](./time-zones-and-dst.md) covers the local zone, zones named in the expression, gaps, and folds.
+- [Command-line tool](./command-line-tool.md) covers the `oncalendar` executable: output, error position, exit status, standard input, and JSON.
 - [Weight and security gates](./gates.md) covers dependency count, build cost, lints, advisories, and robustness tests.

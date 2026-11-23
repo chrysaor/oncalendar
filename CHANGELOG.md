@@ -2,6 +2,12 @@
 
 This file lists the notable changes in each release. The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/), and the version numbers follow [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- `oncalendar-cli` 0.1.0, a command-line tool in `cli/`, installed with `cargo install oncalendar-cli`. Its executable, `oncalendar`, checks an expression, prints its normalized form, and lists its next elapses on any machine, with or without systemd. It takes the number of elapses, the base time, and the local time zone as options, reads one expression per line from standard input, prints JSON with `--json`, and can use the time zone database compiled into it, so zone names also work in a container without tzdata. Each kind of failure has its own exit status. The library is unchanged.
+
 ## 0.1.0 - 2026-11-23
 
 The first release.
