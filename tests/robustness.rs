@@ -556,6 +556,27 @@ fn normalized_form_uses_the_grammar_alphabet() {
 }
 
 #[test]
+fn a_tab_is_not_a_separator() {
+    let with_spaces = ["Mon 10:00", "Mon *-*-* 10:00", "daily UTC", "10:00 UTC"];
+    let mut failures = Vec::new();
+    for spaced in with_spaces {
+        if spaced.parse::<CalendarEvent>().is_err() {
+            failures.push(format!("{spaced:?} is rejected"));
+        }
+        let tabbed = spaced.replace(' ', "\t");
+        if tabbed.parse::<CalendarEvent>().is_ok() {
+            failures.push(format!("{tabbed:?} is accepted"));
+        }
+    }
+    for edge in ["\tdaily", "daily\t", "Mon,\tTue 10:00"] {
+        if edge.parse::<CalendarEvent>().is_ok() {
+            failures.push(format!("{edge:?} is accepted"));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
 fn path_like_time_zone_names_are_parse_errors() {
     let long = "A".repeat(10_000);
     let hostile = [

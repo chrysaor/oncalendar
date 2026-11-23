@@ -779,7 +779,7 @@ The repository carries no code comments (see `CLAUDE.md`), so the reasons behind
 
 ## Open questions
 
-These have not been observed yet. Each one closes inside `model`, `parse`, `format`, or `next` and does not change the public API. Answer them with new fixture rows.
+Every question the design raised has an answer. This section keeps the answers and how each one was found. A new question starts as new fixture rows.
 
 Answered during the implementation, all observed and all in the fixtures:
 
@@ -810,9 +810,11 @@ Answered with a time zone library as a calculator for transition times and the o
 - Input length. systemd has no length limit that was found. It accepts 1,000 weekday items, 3,000 spaces between parts, and 3,000 leading zeros.
 - Base times before 1970. systemd rejects such a base time before it reads the expression, so the oracle cannot be asked. The crate starts the search at 1970-01-01.
 
-Still open:
+Answered by calling systemd directly, outside the fixture format:
 
-1. Tabs inside the expression. The oracle reads tab-separated cases, so it cannot be asked. The crate treats only the space as a separator and rejects a tab.
-2. Whether the tzdata in the oracle image and the host's tzdata disagree on any fixture date. jiff prefers the system zoneinfo over a bundled copy, so turning on `tzdb-bundle-always` in dev-dependencies does not make tests independent of the host. A future fixture header could record the tzdata version.
-3. Names that are both abbreviations and database entries, such as `EST`, `MST`, and `HST`, in an oracle image that has those files. The current image has no `EST` file, so its rejection says nothing about abbreviations.
-4. Only if the decision to reject local abbreviations is reversed: the exact meaning of a local abbreviation. In January, `daily EDT` never elapses in `America/New_York`, and in July `daily EST` never elapses either.
+- Tabs. systemd rejects a tab anywhere in the expression: between parts, before the zone, at either end (observed). The crate does the same, and `tests/robustness.rs` checks it, because a tab-separated fixture cannot hold such a row.
+- tzdata versions. The first line of the oracle output names the tzdata build, and `oracle/check.sh` compares that line. A fixture row that fails on one machine only points to a different tzdata there first.
+- Names such as `EST`, `MST`, `HST`, `UCT`, and `Zulu`. systemd has no list of its own. It accepts a name when the time zone database has a file for it, in exact letter case. With Debian's `tzdata-legacy` package installed it accepts all of them (observed), and without it, it rejects them. The crate follows the same rule through jiff. The oracle image does not install that package, so the fixtures hold no such row.
+- Local abbreviations. systemd accepts the abbreviations of the process time zone and elapses only while that abbreviation is in effect: with `TZ=America/New_York`, `daily EDT` never elapses in January and `daily EST` never elapses in July (observed). The abbreviation wins over a database file of the same name. This depends on the process environment, which the crate never reads, so v0.1 does not support it. This is final for v0.1 and listed under known differences.
+
+No question is open.

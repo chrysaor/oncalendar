@@ -7,7 +7,9 @@ $iterations =~ /^[1-9][0-9]*$/ or die "usage: oracle-query [ITERATIONS] < cases.
 
 my ($version) = `systemd-analyze --version` =~ /^(systemd \S+ \(\S+\))/
 	or die "cannot read the systemd version\n";
-print "# oracle: $version, iterations=$iterations\n";
+my $tzdata = `dpkg-query --show --showformat='\${Version}' tzdata`;
+$tzdata =~ /^\S+$/ or die "cannot read the tzdata version\n";
+print "# oracle: $version, tzdata $tzdata, iterations=$iterations\n";
 
 while (my $line = <STDIN>) {
 	my $n = $.;

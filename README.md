@@ -53,7 +53,7 @@ MSRV is Rust 1.85, edition 2024.
 ## Known differences from systemd
 
 - An unknown time zone name, such as `daily Nowhere/Bogus`, parses. `upcoming` then returns `UnknownTimeZone`. systemd rejects it at parse time.
-- Local time zone abbreviations, such as `daily KST`, are not supported. systemd accepts them only when the process time zone uses that abbreviation.
+- Local time zone abbreviations, such as `daily KST`, are not supported. systemd accepts them only when the process time zone uses that abbreviation, and then elapses only while the abbreviation is in effect. A name that is both, such as `EST` under `TZ=America/New_York`, is read by this library as the database zone.
 - The local time zone is an argument. Parsing reads no file and no environment variable. `upcoming` with a named zone reads the time zone database through jiff, which honors `TZDIR`.
 - Where systemd gives up computing an elapse ("Failed to determine next elapse"), the library still answers. One such input is `Sun *-03-08..14 02:30 America/New_York`, which never elapses.
 - In `Pacific/Chatham`, where the clock jumps from 02:45 to 03:45, systemd leaves out some times that exist on that day and gives up on others, such as `*:45`. The library elapses at every time that exists.

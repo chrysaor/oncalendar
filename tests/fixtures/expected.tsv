@@ -1,4 +1,4 @@
-# oracle: systemd 257 (257.13-1~deb13u1), iterations=5
+# oracle: systemd 257 (257.13-1~deb13u1), tzdata 2026f-0+deb13u1, iterations=5
 # Cases for the differential test. Columns: timezone, base time, expression.
 # Regenerate tests/fixtures/expected.tsv with: oracle/run.sh < tests/fixtures/cases.tsv > tests/fixtures/expected.tsv
 
