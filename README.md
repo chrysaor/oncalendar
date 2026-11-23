@@ -73,6 +73,11 @@ The crate is `#![no_std]` and needs `alloc`, so it runs on embedded targets that
 - `scripts/check-security.sh` runs the no-`unsafe` and panic lints, `cargo deny`, and the robustness tests.
 - `scripts/check-weight.sh` gates the dependency count and reports build time and size.
 - `scripts/check-no-std.sh` builds the crate without default features for `thumbv7em-none-eabihf`.
+- `scripts/check-features.sh` runs clippy on every feature combination, and `scripts/check-minimal-versions.sh` runs the tests with every dependency at its lowest allowed version.
+- `scripts/check-package.sh` checks the files that would be published and builds the packaged crate.
+- `scripts/check-workflows.sh` runs `actionlint` and `zizmor` on the CI configuration.
+- `scripts/fuzz.sh` runs the `cargo-fuzz` targets in `fuzz/`: parsing any input and printing it back, and computing elapses for any accepted expression.
+- CI runs the tests on Linux, macOS, and Windows, and the other checks on Linux. A weekly run checks for new advisories, rebuilds the oracle image, and fuzzes for longer.
 
 ## Contributing
 

@@ -16,22 +16,35 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy --target thumbv7em-none-eabihf
+      - run: cargo install --locked cargo-hack@0.6.46
       - run: cargo fmt --check
       - run: scripts/check-no-comments.sh
-      - run: cargo clippy --all-targets --all-features -- --deny warnings
-      - run: cargo clippy --all-targets --no-default-features -- --deny warnings
-      - run: cargo test --all-features
-      - run: cargo test --no-default-features
+      - run: scripts/check-features.sh
       - run: RUSTDOCFLAGS="--deny warnings" cargo doc --no-deps --all-features
       - run: RUSTDOCFLAGS="--deny warnings" cargo doc --no-deps --no-default-features
       - run: scripts/check-no-std.sh
+      - run: scripts/check-package.sh
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal
+      - run: cargo +stable test --all-features
+      - run: cargo +stable test --no-default-features
 
   msrv:
     runs-on: ubuntu-latest
@@ -40,9 +53,11 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install 1.85 --profile minimal --target thumbv7em-none-eabihf
+      - run: cargo install --locked cargo-hack@0.6.46 cargo-minimal-versions@0.1.39
       - run: cargo +1.85 check --all-targets --all-features
       - run: cargo +1.85 check --all-targets --no-default-features
       - run: RUSTUP_TOOLCHAIN=1.85 scripts/check-no-std.sh
+      - run: RUSTUP_TOOLCHAIN=1.85 scripts/check-minimal-versions.sh
 
   security:
     runs-on: ubuntu-latest
@@ -73,3 +88,26 @@ jobs:
         with:
           persist-credentials: false
       - run: oracle/check.sh
+
+  workflows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - run: pipx install zizmor==1.33.1
+      - run: scripts/check-workflows.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install nightly --profile minimal
+      - run: cargo install --locked cargo-fuzz@0.13.2
+      - run: scripts/fuzz.sh 60

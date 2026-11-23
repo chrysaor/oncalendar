@@ -47,7 +47,10 @@ cargo build --no-default-features --target thumbv7em-none-eabihf
 .claude/skills/verify-oncalendar/bin/verify doctor
 .claude/skills/verify-oncalendar/bin/verify compare
 .claude/skills/verify-oncalendar/bin/verify gates
+scripts/fuzz.sh 60
 ```
+
+`verify gates` needs `cargo-hack`, `cargo-minimal-versions`, `actionlint`, and `zizmor`. `scripts/fuzz.sh` needs `cargo-fuzz` and a nightly toolchain. Each script prints how to install what is missing.
 
 ## What stays out of the repository
 

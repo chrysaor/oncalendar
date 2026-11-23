@@ -84,6 +84,10 @@ doctor)
 	check "the probe builds against the public API" build_probe
 	check "the oracle image builds and answers" sh -c 'printf "UTC\t2026-01-01 00:00:00 UTC\tdaily\n" | oracle/run.sh 1 | grep -q "2026-01-02T00:00:00Z"'
 	check "cargo-deny is installed" cargo deny --version
+	check "cargo-hack is installed" cargo hack --version
+	check "cargo-minimal-versions is installed" cargo minimal-versions --version
+	check "actionlint is installed" actionlint -version
+	check "zizmor is installed" zizmor --version
 	echo "checkout: $root"
 	echo "rustc: $(rustc --version)"
 	exit "$fail"
@@ -117,6 +121,10 @@ gates)
 	}
 	gate fmt cargo fmt --check
 	gate no-comments scripts/check-no-comments.sh
+	gate features scripts/check-features.sh
+	gate minimal-versions scripts/check-minimal-versions.sh
+	gate package scripts/check-package.sh
+	gate workflows scripts/check-workflows.sh
 	gate test-default cargo test --all-features
 	gate test-no-default cargo test --no-default-features
 	gate security scripts/check-security.sh

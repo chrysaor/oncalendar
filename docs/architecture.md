@@ -293,6 +293,8 @@ jiff = { version = "1", optional = true, default-features = false, features = ["
 
 MSRV is 1.85 with edition 2024. jiff 1.0.2 declares `rust-version = "1.85"`.
 
+The requirement `jiff = "1"` stays as it is. Its lowest version, jiff 1.0.0, builds and passes every test on 1.85 and on stable (measured with `scripts/check-minimal-versions.sh`).
+
 ### `no_std`
 
 The crate is `#![no_std]` and links `alloc` in every configuration, with no `std` or `alloc` feature. It needs a global allocator, because a parsed expression holds its lists in `Vec` and a zone name in `Box<str>`. The error types implement `core::error::Error`, which is stable since Rust 1.81, below the MSRV.
@@ -801,8 +803,23 @@ Computation:
 - `scripts/check-security.sh` checks that `Cargo.toml` still forbids `unsafe` code, runs clippy with the deny lints, runs `cargo deny check`, and runs `tests/robustness.rs`. It also fails when `src/` switches a lint off, and through `clippy.toml` when library code calls a method that reads the environment or the system time zone.
 - `scripts/check-weight.sh` is described under [Weight budget](#weight-budget).
 - `scripts/check-no-std.sh` builds the crate without default features for `thumbv7em-none-eabihf`. It fails, rather than skips, when that target is not installed for the active toolchain. Set `RUSTUP_TOOLCHAIN` to run it on another toolchain.
+- `scripts/check-features.sh` runs clippy with warnings denied on every feature combination (`cargo hack --feature-powerset`).
+- `scripts/check-minimal-versions.sh` resolves every dependency to its lowest allowed version (`cargo minimal-versions`) and runs the tests with all features. `Cargo.lock` is restored afterwards.
+- `scripts/check-package.sh` compares `cargo package --list` with an allow list in the script and then builds the packaged crate.
+- `scripts/check-workflows.sh` runs `actionlint` and `zizmor` on `.github/`.
+- `scripts/fuzz.sh <seconds> [target...]` runs each `cargo-fuzz` target in `fuzz/` for the given time, seeded with the expressions in `tests/fixtures/cases.tsv`.
+- Each script fails, rather than skips, when the tool it needs is missing, and prints how to install it.
 - `deny.toml` allows only the MIT license, which every dependency offers, and bans duplicate crate versions.
-- `.github/workflows/ci.yml` runs five jobs: `test` (format, clippy, tests, docs, the `no_std` build), `msrv` (check and the `no_std` build on 1.85), `security`, `weight`, and `oracle`. The `test` and `msrv` jobs install `thumbv7em-none-eabihf` with their toolchain.
+- `.github/workflows/ci.yml` runs on every push to `main` and every pull request:
+  - `lint` (Linux): format, the comment check, the feature powerset, docs, the `no_std` build, and the package check.
+  - `test`: the tests in both feature configurations on Linux, macOS, and Windows.
+  - `msrv` (Linux): check, the `no_std` build, and the minimal-versions tests on 1.85.
+  - `security`, `weight`, `oracle`, and `workflows` (Linux).
+  - `fuzz` (Linux): 60 seconds per fuzz target.
+- `.github/workflows/weekly.yml` runs on Monday mornings (UTC) and on demand, even when no code changed: `cargo deny check advisories`, a fresh build of the oracle image with `oracle/check.sh`, and 30 minutes per fuzz target.
+- `.github/dependabot.yml` asks for weekly updates of `Cargo.lock` and of the pinned actions.
+
+What runs where is decided by running time. `verify gates` holds the checks that finish in seconds on a warm cache: the feature powerset, minimal versions, the package check, and the workflow check each took between 0.2 and 1.9 s (measured), and the whole of `verify gates` took about 15 s. The operating system matrix needs other machines, and fuzzing needs minutes to be worth running, so both are in CI only. Run `scripts/fuzz.sh 60` by hand after changing the parser or the search.
 
 ### Tooling notes
 
@@ -813,7 +830,13 @@ The repository carries no code comments (see `CLAUDE.md`), so the reasons behind
 - `Cargo.toml` uses an `include` allow list, so a stray file in a checkout cannot reach crates.io.
 - The dev-dependency on jiff turns on `tzdb-bundle-always`. The tests, the oracle comparison, and the verification probe read their zones from the bundled database and pass it to `upcoming_with`, so a zone named inside an expression is looked up there too. Their results do not depend on the host's tzdata.
 - `scripts/check-weight.sh` stops when `cargo tree` fails, so an empty graph cannot read as zero dependencies. Its default-feature limit of 2 is for a Unix host. Other targets pull jiff's bundled database crates.
-- CI pins actions by commit so that a moved tag cannot change what runs. The pins are `actions/checkout` v7.0.1 and `EmbarkStudios/cargo-deny-action` v2.1.3. The `msrv` job must use the `rust-version` from `Cargo.toml`. The security job passes `--skip-deny` because the cargo-deny action runs there.
+- CI pins actions by commit so that a moved tag cannot change what runs. The pins are `actions/checkout` v7.0.1 and `EmbarkStudios/cargo-deny-action` v2.1.3. The `msrv` job must use the `rust-version` from `Cargo.toml`. The security job passes `--skip-deny` because the cargo-deny action runs there. A Dependabot update of a pin must update this list too.
+- The pins carry no version comment, because configuration carries no comments. `zizmor --persona pedantic` reports that as `ref-version-mismatch`. The default persona reports nothing.
+- CI installs its tools at fixed versions instead of through another action: `cargo-hack` 0.6.46, `cargo-minimal-versions` 0.1.39, and `cargo-fuzz` 0.13.2 with `cargo install --locked`, `actionlint` 1.7.12 with `go install`, and `zizmor` 1.33.1 with `pipx`. These are the versions the checks were first run with. The `workflows` job passes the job token to `zizmor` so that its online audits run.
+- Shell scripts, Docker, and the weight limit stay on Linux. The weight limit of 2 holds only for a Unix host, and the oracle needs Docker. On Windows, jiff finds no system zoneinfo and uses the database that `tzdb-bundle-platform` compiles in. The tests do not notice, because they read the bundled database. They also pass with every fixture and source file converted to CRLF line endings, as a Windows checkout may do (measured on macOS).
+- `fuzz/` is a separate crate with its own `[workspace]`, so it is not a member of this crate's build, `cargo tree` does not count its dependencies, and the `include` list keeps it out of the package. `fuzz/Cargo.lock` is committed so that CI fuzzes with the same `libfuzzer-sys`. Dependabot does not update it.
+- The fuzz targets: `parse_roundtrip` parses any UTF-8 input and, when it is accepted, checks that the normalized form parses to the same event and prints the same text. `upcoming` takes a base time, a local zone from a short list of zones with daylight saving changes plus the extreme fixed offsets, and an expression, calls `upcoming_with` with the bundled database, and checks that up to 16 results each lie strictly after the one before, starting from the base time. A base time of zero bytes means 2026-01-01 UTC, so the seeds from the fixtures start in the years the fixtures use. Each input has 10 s before libFuzzer reports it as a hang.
+- A failing fuzz input is saved under `fuzz/artifacts/<target>/`. libFuzzer also prints it in base64 in the log, which is how a CI failure can be reproduced: decode it to a file and run `cargo +nightly fuzz run <target> <file>`.
 - The slow reference in `tests/robustness.rs` can be checked against systemd. Run `cargo test --test robustness -- --ignored --nocapture print_generated > gen.tsv`, then `grep -v '^[a-z]' gen.tsv | cut -f1-3 | oracle/run.sh > gen.expected.tsv`. Column 4 of `gen.tsv` must be a prefix of column 6 of `gen.expected.tsv`, and column 4 of `gen.expected.tsv` must be `ok`. The reference gives a day counted from the end one item, because longer lists hit the limit under [Dates](#dates).
 - The slow reference in `tests/robustness.rs` tests every grid point, so it cannot express the wrap floor of the [civil search](#civil-search). Its generator gives `v/r` items in the hour, minute, and second fields only steps that end exactly at the field length (`(24 - v) % r == 0` or `(60 - v) % r == 0`), where the floor equals the minimum. The fixtures and the oracle cover the floor.
 - In `tests/robustness.rs`, the list-cap test leaves out lists of distinct days from the end. Under the limit in [Dates](#dates), at most seven distinct days from the end fit in one list, so such a list never reaches the item cap.

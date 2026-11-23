@@ -11,6 +11,10 @@ A user who adds this crate pays for it in dependencies, build time, and binary s
 - `sec-supply-chain` passes `cargo deny` for advisories, licenses, bans, and sources.
 - `sec-robustness` passes the hostile-input test suite.
 - `oracle-drift` confirms the committed expectations still match systemd.
+- `features` passes clippy on every feature combination.
+- `minimal-versions` passes the tests with every dependency at its lowest allowed version.
+- `package` publishes exactly the allowed files, and the packaged crate builds.
+- `workflows` passes `actionlint` and `zizmor`.
 
 ## How to get to it (user POV)
 
@@ -27,6 +31,7 @@ Preconditions:
 - **Weight alone.** Run `scripts/check-weight.sh`. It prints the dependency count against its limit for each configuration and ends with `weight gate: PASS`.
 - **Security alone.** Run `scripts/check-security.sh`. Its three steps complete and it ends with `security gate: PASS`.
 - **Drift alone.** Run `oracle/check.sh`. It prints `oracle: expected.tsv matches systemd ...`.
+- **The other gates alone.** Run `scripts/check-features.sh`, `scripts/check-minimal-versions.sh`, `scripts/check-package.sh`, or `scripts/check-workflows.sh`. Each ends with a `PASS` line.
 - **Proof.** Quote the PASS lines and the evidence directory that `verify gates` prints. For a weight claim, also quote the dependency counts from `weight.txt`.
 
 ## Gotchas

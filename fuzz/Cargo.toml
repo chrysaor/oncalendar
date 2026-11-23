@@ -1,0 +1,29 @@
+[package]
+name = "oncalendar-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+oncalendar = { path = ".." }
+jiff = { version = "1", default-features = false, features = ["std", "tzdb-bundle-always"] }
+
+[[bin]]
+name = "parse_roundtrip"
+path = "fuzz_targets/parse_roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "upcoming"
+path = "fuzz_targets/upcoming.rs"
+test = false
+doc = false
+bench = false
