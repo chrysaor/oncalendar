@@ -11,7 +11,7 @@ MAX_CLI_DEPS=4
 count_deps() {
 	root=$1
 	shift
-	tree=$(cargo tree --edges normal --prefix none "$@") || { echo "cargo tree failed" >&2; exit 1; }
+	tree=$(cargo tree --color never --edges normal --prefix none "$@") || { echo "cargo tree failed" >&2; exit 1; }
 	printf '%s\n' "$tree" | grep -q "^$root v" || { echo "cargo tree did not list $root" >&2; exit 1; }
 	printf '%s\n' "$tree" | sed 's/ (\*)$//' | sort -u | grep -v "^$root v" | sed 's/^/  depends on: /' >&2 || true
 	printf '%s\n' "$tree" | sed 's/ (\*)$//' | sort -u | grep -vc "^$root v" || true

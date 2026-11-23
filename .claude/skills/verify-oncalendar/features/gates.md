@@ -15,6 +15,9 @@ A user who adds this crate pays for it in dependencies, build time, and binary s
 - `minimal-versions` passes the tests with every dependency at its lowest allowed version.
 - `package` publishes exactly the allowed files, and the packaged crate builds.
 - `workflows` passes `actionlint` and `zizmor`.
+- `no-std` builds the library for a target without `std`.
+- `cli` passes the command-line tool's lints and tests, and builds the packaged tool against the published library.
+- `weight-cli` keeps the command-line tool within its own dependency limit.
 
 ## How to get to it (user POV)
 
@@ -31,7 +34,7 @@ Preconditions:
 - **Weight alone.** Run `scripts/check-weight.sh`. It prints the dependency count against its limit for each configuration and ends with `weight gate: PASS`.
 - **Security alone.** Run `scripts/check-security.sh`. Its three steps complete and it ends with `security gate: PASS`.
 - **Drift alone.** Run `oracle/check.sh`. It prints `oracle: expected.tsv matches systemd ...`.
-- **The other gates alone.** Run `scripts/check-features.sh`, `scripts/check-minimal-versions.sh`, `scripts/check-package.sh`, or `scripts/check-workflows.sh`. Each ends with a `PASS` line.
+- **The other gates alone.** Run `scripts/check-features.sh`, `scripts/check-minimal-versions.sh`, `scripts/check-package.sh`, `scripts/check-workflows.sh`, `scripts/check-no-std.sh`, or `scripts/check-cli.sh`. Each ends with a `PASS` line.
 - **Proof.** Quote the PASS lines and the evidence directory that `verify gates` prints. For a weight claim, also quote the dependency counts from `weight.txt`.
 
 ## Gotchas
