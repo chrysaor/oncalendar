@@ -10,7 +10,7 @@
 
 ```toml
 [dependencies]
-oncalendar = "0.1"
+oncalendar = "0.2"
 jiff = "1"
 ```
 
@@ -18,7 +18,7 @@ jiff = "1"
 
 ```toml
 [dependencies]
-oncalendar = { version = "0.1", default-features = false }
+oncalendar = { version = "0.2", default-features = false }
 ```
 
 See [Features](#features) for what each feature adds.
@@ -94,7 +94,7 @@ An expression can name a time zone, such as `*-*-* 09:00 Asia/Seoul`. `upcoming`
 
 ```toml
 [dependencies]
-oncalendar = "0.1"
+oncalendar = "0.2"
 jiff = { version = "1", features = ["tzdb-bundle-always"] }
 ```
 
@@ -125,7 +125,7 @@ The `cron` feature adds `CalendarEvent::from_cron`, which turns the five time fi
 
 ```toml
 [dependencies]
-oncalendar = { version = "0.1", features = ["cron"] }
+oncalendar = { version = "0.2", features = ["cron"] }
 ```
 
 ```rust
@@ -169,7 +169,7 @@ The crate is `#![no_std]` and needs `alloc`, so it runs on targets that have a g
 
 ```toml
 [dependencies]
-oncalendar = { version = "0.1", default-features = false, features = ["jiff"] }
+oncalendar = { version = "0.2", default-features = false, features = ["jiff"] }
 jiff = { version = "1", default-features = false }
 ```
 

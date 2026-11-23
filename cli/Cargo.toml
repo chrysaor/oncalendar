@@ -18,7 +18,7 @@ name = "oncalendar"
 path = "src/main.rs"
 
 [dependencies]
-oncalendar = { version = "0.1.0", path = "..", default-features = false, features = ["jiff"] }
+oncalendar = { version = ">=0.1.0, <0.3.0", path = "..", default-features = false, features = ["jiff"] }
 jiff = { version = "1", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo", "tzdb-bundle-always"] }
 
 [profile.release]
