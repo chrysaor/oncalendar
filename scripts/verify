@@ -87,6 +87,8 @@ doctor)
 	check "cargo-minimal-versions is installed" cargo minimal-versions --version
 	check "actionlint is installed" actionlint -version
 	check "zizmor is installed" zizmor --version
+	check "the wasm32-unknown-unknown target is installed" sh -c 'test -d "$(rustc --print sysroot)/lib/rustlib/wasm32-unknown-unknown"'
+	check "node is installed" node --version
 	echo "checkout: $root"
 	echo "rustc: $(rustc --version)"
 	exit "$fail"
@@ -130,6 +132,7 @@ gates)
 	gate weight scripts/check-weight.sh
 	gate no-std scripts/check-no-std.sh
 	gate cli scripts/check-cli.sh
+	gate wasm scripts/check-wasm.sh
 	gate oracle-drift oracle/check.sh
 	echo "evidence: $dir"
 	exit "$fail"

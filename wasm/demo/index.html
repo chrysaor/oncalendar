@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>OnCalendar checker</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="demo.css">
+<script type="module" src="demo.mjs"></script>
+</head>
+<body>
+<main>
+  <header>
+    <h1>OnCalendar checker</h1>
+    <p class="lead">Check a systemd <code>OnCalendar=</code> expression, see its normalized form, and list when it elapses next. Everything runs in this page. Nothing you type leaves your browser.</p>
+  </header>
+
+  <form id="form" autocomplete="off">
+    <label for="expression">Expression</label>
+    <input id="expression" name="expression" type="text" spellcheck="false" autocapitalize="off" maxlength="16384" value="Mon..Fri 09:00" disabled>
+
+    <div class="examples" aria-label="Examples">
+      <button type="button" data-example="daily">daily</button>
+      <button type="button" data-example="Mon..Fri 09:00">Mon..Fri 09:00</button>
+      <button type="button" data-example="*:0/15">*:0/15</button>
+      <button type="button" data-example="Sat *-*-1..7 18:00">Sat *-*-1..7 18:00</button>
+      <button type="button" data-example="*-*~01 23:30 Asia/Seoul">*-*~01 23:30 Asia/Seoul</button>
+      <button type="button" data-example="quarterly">quarterly</button>
+    </div>
+
+    <div class="options">
+      <div>
+        <label for="zone">Local time zone</label>
+        <select id="zone" name="zone" disabled></select>
+      </div>
+      <div>
+        <label for="count">Elapses</label>
+        <select id="count" name="count" disabled>
+          <option>5</option>
+          <option selected>10</option>
+          <option>25</option>
+          <option>50</option>
+          <option>100</option>
+        </select>
+      </div>
+    </div>
+  </form>
+
+  <section id="result" aria-live="polite">
+    <p id="status" class="status">Loading the WebAssembly module…</p>
+
+    <div id="normalized-block" hidden>
+      <h2>Normalized</h2>
+      <p><code id="normalized"></code></p>
+    </div>
+
+    <div id="error-block" hidden>
+      <h2>Problem</h2>
+      <p id="error-message"></p>
+      <pre id="error-location"><span id="error-before"></span><mark id="error-at"></mark><span id="error-after"></span></pre>
+    </div>
+
+    <div id="elapses-block" hidden>
+      <h2>Next elapses</h2>
+      <p id="elapses-caption" class="caption"></p>
+      <table id="elapses-table">
+        <thead>
+          <tr><th scope="col">Local time</th><th scope="col">UTC</th><th scope="col">From now</th></tr>
+        </thead>
+        <tbody id="elapses"></tbody>
+      </table>
+      <p id="never" hidden>This expression never elapses again.</p>
+    </div>
+  </section>
+
+  <footer>
+    <p>Computed by the <code>oncalendar</code> Rust library compiled to WebAssembly, with the IANA time zone database bundled by <code>jiff</code>. A zone in the expression wins over the local time zone. Unlike systemd, the library accepts an unknown zone name at parse time and reports it when computing elapses.</p>
+  </footer>
+</main>
+</body>
+</html>

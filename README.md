@@ -154,6 +154,21 @@ Without `system-tzdb`, `upcoming` knows no zone name other than `UTC`, so an exp
 
 `scripts/check-no-std.sh` builds the crate for `thumbv7em-none-eabihf` without default features and with only `jiff`. The crate has not been run on a device.
 
+## Try it in a browser
+
+`wasm/` holds a small crate that compiles the library to WebAssembly (`wasm32-unknown-unknown`) and a static demo page in `wasm/demo/`. The page checks an expression as you type, marks where a parse error starts, prints the normalized form, and lists the next elapses in a time zone you pick. It loads only its own files, and what you type stays in the browser.
+
+To build the module and open the page, install the `wasm32-unknown-unknown` target and Node.js, then run these commands:
+
+```sh
+scripts/check-wasm.sh
+python3 -m http.server --directory wasm/demo 8000
+```
+
+Then open `http://localhost:8000/`. Browsers do not load WebAssembly from a `file://` page, so the page needs a local server. Any static file server works.
+
+The module is 545 KB, or 176 KB with gzip. About 280 KB of it is jiff's bundled time zone database and the zone lookups. `scripts/check-wasm.sh` also runs every fixture row through the module in Node.js and compares the results with `tests/fixtures/expected.tsv`.
+
 ## Features
 
 | Feature | Default | What it adds |
@@ -221,6 +236,7 @@ The expected results come from systemd, never from this crate. `oracle/` runs `s
 - `tests/oracle.rs` checks every fixture row through the public API: whether the expression is accepted, the normalized form, and the first five elapses.
 - `tests/normalize.rs` checks the normalized forms again with no feature, so the build without dependencies is covered.
 - `tests/robustness.rs` checks that hostile input never panics, never loops, and never appears in an error message, and checks the elapses against a slow reference search.
+- `scripts/check-wasm.sh` builds the library for WebAssembly and checks every fixture row again through that build.
 - The scripts in `scripts/` check the lints, the licenses of dependencies, the dependency count, the `no_std` build, every feature combination, the lowest allowed dependency versions, the packaged files, and the CI configuration. `scripts/fuzz.sh` runs the `cargo-fuzz` targets in `fuzz/`.
 - `cli/tests/` runs the command-line tool against every fixture row, as an argument and on standard input.
 - CI runs the tests on Linux, macOS, and Windows. A weekly run checks for new advisories, rebuilds the oracle image, and fuzzes for 30 minutes per target.
