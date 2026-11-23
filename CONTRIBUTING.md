@@ -2,6 +2,12 @@
 
 This guide covers the rules every change follows and the commands that check them. The design and the reasons behind it are in [docs/architecture.md](docs/architecture.md).
 
+## Before you start
+
+You do not need every tool in this guide to send a change. Locally, run `cargo test --all-features` and, for a change to parsing or elapses, `scripts/verify compare`. CI runs the rest on every pull request.
+
+If something is unclear, or a tool does not work for you, open an issue and ask. A question is welcome before any code, and so is a report that systemd gives a different result, even without a fix.
+
 ## The clean-room rule
 
 systemd is licensed LGPL-2.1-or-later, and this crate is `MIT OR Apache-2.0`. Code or test tables derived from LGPL source would bring LGPL terms into the crate. Other implementations of this grammar have their own licenses, and reading them makes it hard to show that this code was written independently. The rule exists to keep the license of the crate clean, so it is not open to exceptions.
