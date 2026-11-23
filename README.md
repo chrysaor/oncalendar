@@ -4,7 +4,7 @@
 
 ## Status
 
-The design is complete and the implementation has not started. `src/` holds the public API as stubs, and every expression is rejected, so most tests fail for now. The crate is not published on crates.io.
+v0.1 is implemented, and its normalization and elapses match `systemd-analyze calendar` on every fixture. The crate is not published on crates.io.
 
 What exists today:
 

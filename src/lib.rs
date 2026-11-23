@@ -19,9 +19,6 @@
 //! form when parsing and looked up in the time zone database when `CalendarEvent::upcoming`
 //! runs.
 //!
-//! Status: the public API is in place, the implementation is not. Every expression is rejected
-//! for now.
-//!
 //! [`Display`]: core::fmt::Display
 
 mod error;

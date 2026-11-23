@@ -1,6 +1,6 @@
 # oncalendar architecture
 
-This document is the design for `oncalendar` v0.1. The implementation has not started. `src/` holds the public API as stubs, and every expression is rejected. The tests and the gates exist and fail until the implementation lands. Every section says what is decided and why, so that a contributor can start writing code without reopening the decisions.
+This document is the design for `oncalendar` v0.1, and `src/` implements it. Every section says what is decided and why, so that a contributor can change the code without reopening the decisions.
 
 Behavior claims marked "observed" come from `systemd-analyze calendar` in systemd 257.13, run in the container under `oracle/`. Numbers marked "measured" were measured on small prototype crates during the design. Numbers marked "estimate" were worked out by hand and not measured.
 
@@ -110,9 +110,10 @@ enum Item<F: FieldSpec> {
 	/// `v/r`. Runs to the end of the field and reaches at least two values.
 	/// That means `v + r <= F::MAX`, or `v > r` for days from the end of the month.
 	Every { start: Value<F>, step: Step<F> },
-	/// `a..b` with `a < b`.
+	/// `a..b` with `a < b`. It steps by `F::UNIT`, so a seconds range holds whole-second steps.
 	Range { start: Value<F>, stop: Value<F> },
-	/// `a..b/r` with `a < b`, and `b - a` a multiple of `r`.
+	/// `a..b/r` with `a < b`, `b - a` a multiple of `r`, and `r` not `F::UNIT`.
+	/// `a..b/1` is stored as `Range`.
 	Stepped { start: Value<F>, stop: Value<F>, step: Step<F> },
 }
 
@@ -123,11 +124,19 @@ struct Value<F: FieldSpec>(u32, PhantomData<F>);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct Step<F: FieldSpec>(core::num::NonZeroU32, PhantomData<F>);
 
-/// Range and error label of one field. Implemented by zero-sized marker types.
+/// Range, unit, and error label of one field. Implemented by zero-sized marker types.
 trait FieldSpec: Copy + Ord + core::hash::Hash + core::fmt::Debug {
 	const MIN: u32;
 	const MAX: u32;
 	const FIELD: Field;
+	/// Distance between neighboring values: 1, or 1,000,000 µs for seconds.
+	const UNIT: u32 = 1;
+	/// `v/r` counts down toward `MIN`. True only for days from the end.
+	const DESCENDING: bool = false;
+	/// A range without a repetition needs two values. True only for seconds.
+	const PLAIN_RANGE_NEEDS_TWO: bool = false;
+	/// The item `MIN/UNIT` turns the component into `Any`. True only for seconds.
+	const EVERY_UNIT_IS_ANY: bool = false;
 }
 
 struct Year;       // 1970..=2199
@@ -172,7 +181,7 @@ The parser expands shorthands such as `daily` into this model. No trace of the s
 | Days counted from both ends in one expression, or `~*` | `DaySpec` is an enum, and `FromEnd` has no `Any` |
 | A model that is not yet normalized | No such value exists |
 
-The types allow dates that are not on the calendar, such as `*-02-30`. systemd parses that expression and reports that it never elapses (observed), so it is a valid state. The rule `v + r <= F::MAX` for `Every` is checked by the constructor and is not visible in the type.
+The types allow dates that are not on the calendar, such as `*-02-30`. systemd parses that expression and reports that it never elapses (observed), so it is a valid state. The rule `v + r <= F::MAX` for `Every` is checked by the constructor and is not visible in the type. The same holds for the limit on lists of days from the end, which `DaySpec::from_end` checks (see [Dates](#dates)).
 
 ## Public API
 
@@ -365,6 +374,10 @@ The weekday list is a set. The output starts at Monday. A run of three or more c
 
 Rejected: ranges that wrap past Sunday (`Fri..Mon`, `Tue..Mon`, `Sun..Tue`), `Mon,,Fri`, `Xyz *-*-*`, and `Wedn`. A weekday list of 257 items is accepted, so the weekday list has no item cap.
 
+- A weekday is its three-letter abbreviation or its full English name, in any case (`tHu`, `THURSDAY`). `Tues`, `Thur`, `Thurs`, `Wedn`, and `Mo` are rejected.
+- `-` and `..` both separate a range, also between full names (`Monday..Friday`, `mon-FRI`). A one-day range such as `Mon-Mon` is that day. A chain such as `Mon-Wed-Fri` or `Mon..Wed..Fri` is rejected, and so are `Mon.Tue`, `Mon..`, and a repetition such as `Mon..Fri/2`.
+- The weekday word may end in one comma (`Mon,`, `Mon,Tue,`). The list cannot continue in the next word, so `Mon, Tue 10:00` is rejected, and the next part must follow after a space, so `Mon,*-*-*` is rejected while `Mon, *-*-*` and `Mon, UTC` are accepted. `Mon,,` and `,Mon` are rejected.
+
 ### Dates
 
 The parser fills a short date from the right: day, then month, then year.
@@ -385,7 +398,10 @@ The parser fills a short date from the right: day, then month, then year.
 - Two-digit years 00 to 69 mean 20xx, and 70 to 99 mean 19xx. Three-digit years such as `100` are rejected.
 - Years run from 1970 to 2199. `1969` and `2200` are rejected.
 - Days counted from the end (`~`) run from 1 to 28. `~0`, `~29`, `~31`, and `*-02~29` are rejected.
-- A repetition counted from the end moves toward the end of the month. `*-*~03/2` elapses on January 29 and 31. `~v/r` needs `v > r`, so `~01/1` and `~02/2` are rejected.
+- A repetition counted from the end moves toward the end of the month. `*-*~03/2` elapses on January 29 and 31. `~v/r` needs `v > r`, so `~01/1`, `~02/2`, and `~1/2` are rejected, and `~28/27` is accepted. A stepped range counted from the end, `~a..b/r`, holds `a, a + r, ...` up to `b`.
+- A list of days from the end has a limit that falls with each item. Sort the list, remove duplicates, and shrink the range ends. Item `i`, counted from 0, may reach at most `28 - 3i`. The value an item reaches is `v` for `v` and `v/r`, and `b` for `a..b` and `a..b/r`. So one item may reach 28, two items 25, three items 22, and a list of eight distinct days is always rejected. `~1,25` and `~1..26,2` (sorted `01..26,02`) are accepted. `~1,26`, `~1,1..26`, and `~1..28,1` (sorted `01,01..28`) are rejected. `~03..26/2,1` is accepted because the end shrinks to 25 before the check, and `~1,2,22,22` is accepted because the duplicate goes first. The month and year fields do not change the limit (`*-01~1,26` is rejected). Observed over all 378 pairs and all 3,276 triples of distinct values.
+- A token is a date when it holds no `:`. It needs a `-` or a `~`, so `12` and `2026` alone are rejected. `~01` and `2026~01` are rejected, the second because 2026 is read as the month. `*~*` is `*-*-*`.
+- Two-digit years expand by value in every value position: list items, range ends, and the start of a repetition, never the step. `12..14` is 2012..2014, `0..1` is 2000..2001, `99..2000` is 1999..2000, and `12/187` is 2012/187. `69..70` becomes 2069..1970 and is rejected as reversed.
 
 ### Times and seconds
 
@@ -402,10 +418,12 @@ The parser fills a short date from the right: day, then month, then year.
 | `00:00:10..20/5.5` | `*-*-* 00:00:10..15.500000/5.500000` |
 | `*:*:00/0.0000005` | `*-*-* *:*:00/0.000001` |
 
-- Fractions round to six digits, and the range check runs after rounding. `59.9999999` rounds to 60 and is rejected. `00/0.0000001` rounds the step to 0 and is rejected.
-- `0/1` becomes `*` in the seconds field only. In the minutes field it stays.
+- Fractions round to six digits, and the range check runs after rounding. `59.9999999` rounds to 60 and is rejected. `00/0.0000001` rounds the step to 0 and is rejected. A fraction needs digits on both sides of the `.`: `1.` and `.5` are rejected. Only the seconds field takes fractions (`*:5.5` is rejected).
+- `0/1` becomes `*` in the seconds field only, and it turns the whole component into `*`: `*:*:0/1,5` prints as `*:*:*`. In the minute, hour, day, month, and year fields it stays (`*:00/1`, `00/1:00`, `*-*-01/1`, `*-01/1-01`, `1970/1-01-01`). `*:*:1/1` stays too.
 - Out of range: `24:00`, `23:59:60`, `*:60`, `*-*-* 25:00`.
-- `*:*:0..0.5` is rejected. The reason is not known yet.
+- A seconds range without a repetition steps by whole seconds and must reach at least two values, so its end must be at least one second after its start. That is why `*:*:0..0.5` is rejected. `*:*:1..1`, `*:*:0.5..1`, and `*:*:1.5..2.4` are rejected too, while `*:*:0..1`, `*:*:1.5..2.5`, and `*:*:0.5..2` (printed `00.500000..01.500000`) are accepted. With an explicit repetition, one value is fine: `*:*:1..1/1` and `*:*:1..2/1.5` print as `*:*:01`. The minute and other fields have no such rule: `3..3` is `03`.
+- `v/r` in seconds needs `v + r` below 60 s: `58.5/1.4` is accepted, and `58.5/1.5` and `0.5/59.5` are rejected.
+- A repetition of exactly one unit prints as a plain range in every field: `*-*-1..31/1` prints as `*-*-01..31`, and `*:*:0..59/1` as `*:*:00..59`.
 
 ### Lists, ranges, and repetitions
 
@@ -440,6 +458,10 @@ The parser fills a short date from the right: day, then month, then year.
 | `daily +09:00` | rejected by both. `:` is not allowed in a zone name. |
 
 Only `UTC` matches in any case. Other names keep the case as written, and `zone` accepts a name only when jiff's canonical name for the zone is exactly the token.
+
+The parser finds the zone this way. It first reads the whole input as an expression with no zone. When that fails, and the input has a last word after a single space that passes the [name check](#time-zone-names), it reads the rest as the expression and the last word as the zone. The first attempt matters because a date such as `10-15` also has the form of a zone name. The rest must still be a valid expression, so `UTC` alone, `daily  UTC` (the rest ends in a space), and `*-*-* 12:00 UTC UTC` are rejected. A last word that only looks like a zone, as in `Mon Mon`, `daily Mon`, or `10:00 Mon`, parses as a zone name, and `upcoming` then returns `UnknownTimeZone`. systemd rejects these at parse time, which is the known difference for unknown names.
+
+Shorthands stand alone. `daily 10:00` and `Mon daily` are rejected, and only a zone may follow a shorthand.
 
 ### Whitespace
 
@@ -564,7 +586,7 @@ Worst inputs found so far:
 | `Sun *-03-08..14 02:30 America/New_York` | Never elapses. Every candidate falls in the spring gap. systemd gives up on this input (see Known differences). | 173 gap restarts of about 6 steps |
 | `*-02-30` | Never elapses. February never has day 30. | about 174 years of carries |
 
-`next` also carries a fixed fuel limit of 20,000 steps per call. When the fuel runs out, `next` returns `None`. The proof above says the limit is never reached. The fuel only turns a future bug in the gap end computation into a wrong `None` instead of an endless loop. A unit test in `src/next.rs` will assert that the test corpus never runs out of fuel.
+`next` also carries a fixed fuel limit of 20,000 steps per call. When the fuel runs out, `next` returns `None`. The proof above says the limit is never reached. The fuel only turns a future bug in the gap end computation into a wrong `None` instead of an endless loop. A unit test in `src/next.rs` runs every fixture expression from three base times (2026, 2190, and 1 µs before the New York fall transition) and asserts that no search runs out of fuel. The most steps one call took there was 698 (measured).
 
 ### Lints and impossible branches
 
@@ -607,7 +629,7 @@ The item cap applies per field. An expression with 300 items split between the m
 
 The reason is log injection. Callers often log `err.to_string()`. If the message carried the input, an attacker could put newlines that forge log lines, or ANSI escape sequences that rewrite a terminal, into the caller's logs. systemd itself echoes the input in its error message (observed), and this crate does not copy that. A caller that wants to show the input can use `offset()` and apply its own escaping.
 
-Messages are printable ASCII with a fixed maximum length. `offset()` is at most the input length and always on a character boundary.
+Messages are printable ASCII with a fixed maximum length. A list of days from the end that breaks the limit under [Dates](#dates) has its own message. `offset()` is at most the input length and always on a character boundary.
 
 ### Time zone names
 
@@ -740,15 +762,16 @@ The repository carries no code comments (see `CLAUDE.md`), so the reasons behind
 - The dev-dependency on jiff turns on `tzdb-bundle-always`. The tests read their own zones from the bundled database. A zone named inside an expression is still looked up by the library through jiff, which prefers the host's zoneinfo.
 - `scripts/check-weight.sh` stops when `cargo tree` fails, so an empty graph cannot read as zero dependencies. Its default-feature limit of 2 is for a Unix host. Other targets pull jiff's bundled database crates.
 - CI pins actions by commit so that a moved tag cannot change what runs. The pins are `actions/checkout` v7.0.1 and `EmbarkStudios/cargo-deny-action` v2.1.3. The `msrv` job must use the `rust-version` from `Cargo.toml`. The security job passes `--skip-deny` because the cargo-deny action runs there.
-- The slow reference in `tests/robustness.rs` can be checked against systemd. Run `cargo test --test robustness -- --ignored --nocapture print_generated > gen.tsv`, then `grep -v '^[a-z]' gen.tsv | cut -f1-3 | oracle/run.sh > gen.expected.tsv`. Column 4 of `gen.tsv` must be a prefix of column 6 of `gen.expected.tsv`, and column 4 of `gen.expected.tsv` must be `ok`. The reference skips shapes whose rules are still open: a day counted from the end gets one item.
-- In `tests/robustness.rs`, the list-cap test leaves out lists of distinct days from the end, because systemd rejects some of them below the cap by a rule that is not known.
+- The slow reference in `tests/robustness.rs` can be checked against systemd. Run `cargo test --test robustness -- --ignored --nocapture print_generated > gen.tsv`, then `grep -v '^[a-z]' gen.tsv | cut -f1-3 | oracle/run.sh > gen.expected.tsv`. Column 4 of `gen.tsv` must be a prefix of column 6 of `gen.expected.tsv`, and column 4 of `gen.expected.tsv` must be `ok`. The reference gives a day counted from the end one item, because longer lists hit the limit under [Dates](#dates).
+- In `tests/robustness.rs`, the list-cap test leaves out lists of distinct days from the end. Under the limit in [Dates](#dates), at most seven distinct days from the end fit in one list, so such a list never reaches the item cap.
+- The search queries in `model`, such as `Component::next_at_or_after` and `DaySpec::mask`, are compiled only with the `jiff` feature, because only `next` calls them.
 
 ## Known differences from systemd
 
 - **Unknown time zone names fail later.** systemd rejects `daily Nowhere/Bogus` at parse time. This crate parses it, and `upcoming` returns `UnknownTimeZone`. A user who only parses sees the expression accepted.
 - **No local time zone abbreviations.** systemd accepts `daily KST` only when the process time zone uses `KST`, so its result depends on the environment. This crate cannot match that with `FromStr`. It parses the token as a name, and `upcoming` returns `UnknownTimeZone`.
 - **The local zone is an argument.** systemd reads `TZ` and `/etc/localtime`. This crate uses the `local` argument. Pass `&jiff::tz::TimeZone::system()` to match systemd.
-- **Named zones depend on the zone database.** Names are looked up in jiff's database, which on Unix is the system copy. In a minimal container without tzdata, every named zone fails with `UnknownTimeZone`. To bundle the database, turn on jiff's `tzdb-bundle-always` feature in your own `Cargo.toml`. Cargo merges the features of one jiff version.
+- **Named zones depend on the zone database.** Names are looked up in jiff's database, which on Unix is the system copy. In a minimal container without tzdata, every named zone fails with `UnknownTimeZone`. To bundle the database, turn on jiff's `tzdb-bundle-always` feature in your own `Cargo.toml`. Cargo merges the features of one jiff version. The oracle image has no `EST`, `UCT`, `Zulu`, or `W-SU` file (measured), so systemd there rejects `*-*-* 10:00 EST`, while this crate accepts it on a macOS host, which has those files.
 
 - **The crate answers where systemd gives up.** systemd appears to bound its search (inferred from the failure, not from its code). When every candidate for many years falls in a daylight-saving gap, it fails with "Failed to determine next elapse" instead of answering. `Sun *-03-08..14 02:30 America/New_York` from a 2026 base time does this (observed). From a 2190 base time systemd answers `never` for the same expression (observed), so `never` is the true answer. This crate skips each gap in one step and returns `never` from any base time. The oracle reports such rows as `unresolved`.
 
@@ -756,12 +779,16 @@ The repository carries no code comments (see `CLAUDE.md`), so the reasons behind
 
 These have not been observed yet. Each one closes inside `model`, `parse`, `format`, or `next` and does not change the public API. Answer them with new fixture rows.
 
-Normalization:
+Answered during the implementation, all observed and all in the fixtures:
 
-1. Why some lists of days from the end are rejected. `*-*~1,24,25`, `*-*~1,24..26`, and `*-*~1,27..28` are rejected, while `*-*~1,24`, `*-*~24,25`, and `*-*~1..2,24` are accepted (observed). The rule is not known. The fixtures hold these rows.
-2. The exact rule for repetitions on days from the end. `~1/2`, `~02/2`, and `~01/1` are rejected, and `~03/2` and `~05/2` are accepted (observed). The step may have to be smaller than the start.
-3. Why `*:*:0..0.5` is rejected. A minimum span for second ranges may exist.
-4. Whether `0/1` becomes `*` in the hour, day, and month fields. It does for seconds and does not for minutes.
+- Lists of days from the end: item `i` of the sorted list may reach at most `28 - 3i`. See [Dates](#dates).
+- Repetitions on days from the end: `~v/r` needs `v > r`, so it reaches `v - r` at least. See [Dates](#dates).
+- `*:*:0..0.5` is rejected because a seconds range without a repetition needs two whole-second values. See [Times and seconds](#times-and-seconds).
+- `0/1` becomes `*` in the seconds field only. It stays in the hour, day, month, and year fields.
+- A comma after weekdays, `-` in weekday ranges, and weekday spellings. See [Weekdays](#weekdays).
+- How the parser tells a zone from the rest. See [Time zones](#time-zones).
+- A leading `+` on a number is rejected (`*-*-+1`, `*:+5`), and so is a full-width space between parts.
+- With `TZ=UTC`, systemd rejects `daily EST` because the oracle image has no `EST` file. See [Known differences](#known-differences-from-systemd).
 
 Answered since the first draft, all observed and all in the fixtures:
 
@@ -773,11 +800,7 @@ Answered since the first draft, all observed and all in the fixtures:
 
 Grammar:
 
-5. The full rule for a comma after weekdays. `Mon,` and `Wed, 17:48` are accepted, and `Mon, Tue 10:00` is rejected.
-6. Details of `-` as a weekday range separator, such as `Mon-Wed,Fri` and `Mon-Mon`.
-7. Which weekday spellings are accepted besides three letters and the full name, such as `Tues` and `Thur`.
-8. How the parser tells a zone token from a weekday token. `Mon UTC` is accepted, and `UTC` alone is rejected.
-9. A leading `+` on numbers, tabs inside the expression, and full-width spaces.
+9. Tabs inside the expression. The oracle reads tab-separated cases, so it cannot be asked. The crate treats only the space as a separator and rejects a tab.
 
 Computation:
 
@@ -788,7 +811,7 @@ Computation:
 14. The 2199 boundary. Whether `2199-12-31 23:59:59.999999` elapses, and what happens to a local 2199 time that is in 2200 in UTC.
 15. Whether the tzdata in the oracle image and the host's tzdata disagree on any fixture date. jiff prefers the system zoneinfo over a bundled copy, so turning on `tzdb-bundle-always` in dev-dependencies does not make tests independent of the host. A future fixture header could record the tzdata version.
 16. Whether systemd has an input length limit apart from the item cap.
-17. Names that are both abbreviations and database entries, such as `EST`, `MST`, and `HST`. With `TZ=UTC`, systemd rejects `daily EST` and accepts `daily GMT`. If jiff finds `EST` in the database, this crate accepts it, and that would be another difference. Check with a fixture row and a jiff lookup test.
+17. Names that are both abbreviations and database entries, such as `EST`, `MST`, and `HST`, in an oracle image that has those files. The current image has no `EST` file, so its rejection says nothing about abbreviations.
 
 Only if the decision to reject local abbreviations is reversed:
 
