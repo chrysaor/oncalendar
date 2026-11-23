@@ -1,10 +1,4 @@
 #!/bin/sh
-# Regenerates the expectations from real systemd and fails if they differ from the committed file.
-#
-#   oracle/check.sh
-#
-# The first line names the systemd build and is compared too, so a different build is noticed
-# even when it prints the same rows.
 set -eu
 
 cd "$(dirname -- "$0")/.."

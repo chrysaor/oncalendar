@@ -1,17 +1,4 @@
 #!/bin/sh
-# Security gate. Every step must pass. Run from any directory.
-#
-#   scripts/check-security.sh [--skip-deny]
-#
-# --skip-deny leaves out step 2. CI uses it because a separate action runs cargo-deny there.
-#
-# Steps:
-#   1. No unsafe code in the library, and none of the panicking constructs that the lints in
-#      Cargo.toml name, with and without default features. No lint is switched off in src/.
-#      The lints do not see every panic (`assert!`, `split_at`), so step 3 covers the rest.
-#   2. No known advisories, no disallowed licenses, no unknown sources (deny.toml).
-#   3. The robustness tests pass, with and without default features: random and hostile input
-#      never panics and always terminates.
 set -eu
 
 cd "$(dirname -- "$0")/.."

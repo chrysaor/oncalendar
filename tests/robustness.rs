@@ -1,15 +1,5 @@
-//! Properties that must hold for any input, including hostile input.
-//!
-//! Each test names the property it checks (numbered as in `docs/architecture.md`). Inputs come from a
-//! fixed-seed generator, so every run sees the same cases. Properties about accepted input fail
-//! when no input was accepted, so an implementation that rejects everything cannot pass them.
-//!
-//! The computation tests check results against a slow reference written here: a generator builds
-//! an expression together with a matcher for it, and the reference walks the wall clock day by
-//! day and second by second. `print_generated_cases_for_oracle` (ignored) prints the generated
-//! cases in `cases.tsv` form with the reference's answers, so the reference itself can be checked
-//! against real systemd with `oracle/run.sh`.
 #![allow(
+    missing_docs,
     clippy::panic,
     clippy::unwrap_used,
     clippy::expect_used,
@@ -26,22 +16,14 @@ use std::time::{Duration, Instant};
 
 use oncalendar::{CalendarEvent, ParseError};
 
-/// Generous enough for a loaded machine, small enough that quadratic or unbounded work fails.
 const TIME_LIMIT: Duration = Duration::from_secs(5);
-/// List items allowed per numeric field.
 const MAX_ITEMS: usize = 241;
-/// Longest possible normalized item plus its comma: `SS.ffffff..SS.ffffff/SS.ffffff,`.
 const MAX_ITEM_LEN: usize = 31;
-/// Six numeric fields at the item limit, plus weekdays, separators and a time zone name.
 const MAX_NORMALIZED_LEN: usize = 6 * MAX_ITEMS * MAX_ITEM_LEN + 1024;
 const MAX_MESSAGE_LEN: usize = 200;
 
 const EXPECTED: &str = include_str!("fixtures/expected.tsv");
 
-// ---------------------------------------------------------------------------------------------
-// Shared helpers
-
-/// splitmix64. Small, fast and good enough to spread test inputs.
 struct Rng(u64);
 
 impl Rng {
@@ -61,7 +43,6 @@ impl Rng {
         (self.next_u64() % n as u64) as usize
     }
 
-    /// Uniform in `lo..=hi`.
     fn range(&mut self, lo: u32, hi: u32) -> u32 {
         lo + (self.next_u64() % u64::from(hi - lo + 1)) as u32
     }
@@ -93,7 +74,6 @@ fn parse(input: &str) -> Parsed {
     }
 }
 
-/// Expressions systemd accepted, from the oracle fixtures.
 fn accepted_corpus() -> Vec<&'static str> {
     fixture_expressions("ok")
 }
@@ -116,13 +96,11 @@ fn fixture_expressions(status: &str) -> Vec<&'static str> {
         .collect()
 }
 
-/// Characters a grammar-aware fuzzer draws from.
 const GRAMMAR: &[char] = &[
     '0', '1', '2', '3', '5', '9', '*', ',', '.', '/', '~', ':', '-', ' ', 'M', 'o', 'n', 'T', 'u',
     'e', 'S', 'a', 't', 'U', 'C', 'A', 's', 'i', '_', '+',
 ];
 
-/// Characters that tend to break byte-oriented code: multi-byte, combining, control, NUL.
 const HOSTILE: &[char] = &[
     '\0',
     '\u{7}',
@@ -147,8 +125,6 @@ const HOSTILE: &[char] = &[
     '\u{10ffff}',
 ];
 
-/// Inputs for the parsing properties: random text, hostile characters at every position of the
-/// fixture expressions, and grammar-aware mutations.
 fn fuzz_inputs() -> Vec<String> {
     let mut rng = Rng::new(0x0ca1_e0da);
     let mut inputs = Vec::new();
@@ -156,7 +132,6 @@ fn fuzz_inputs() -> Vec<String> {
     seeds.extend(rejected_corpus());
     seeds.retain(|s| s.len() < 200);
 
-    // Property 1: Arbitrary text.
     for _ in 0..5_000 {
         let len = rng.below(40);
         let text: String = (0..len)
@@ -168,7 +143,6 @@ fn fuzz_inputs() -> Vec<String> {
             .collect();
         inputs.push(text);
     }
-    // Property 1: Each hostile character at every character boundary of a few seeds.
     for seed in seeds.iter().take(40) {
         for (at, _) in seed.char_indices().chain([(seed.len(), ' ')]) {
             let mut text = seed.to_string();
@@ -176,7 +150,6 @@ fn fuzz_inputs() -> Vec<String> {
             inputs.push(text);
         }
     }
-    // Property 2: Insertions, deletions and replacements on the seeds.
     for _ in 0..20_000 {
         let mut chars: Vec<char> = rng.pick(&seeds).chars().collect();
         for _ in 0..rng.range(1, 3) {
@@ -192,7 +165,6 @@ fn fuzz_inputs() -> Vec<String> {
         }
         inputs.push(chars.into_iter().collect());
     }
-    // Property 2: Random strings over the grammar's alphabet.
     for _ in 0..20_000 {
         let len = rng.range(1, 30) as usize;
         inputs.push((0..len).map(|_| *rng.pick(GRAMMAR)).collect());
@@ -200,7 +172,6 @@ fn fuzz_inputs() -> Vec<String> {
     inputs
 }
 
-/// Runs `check` on every input and fails with the first few offenders.
 fn assert_all<'a, I>(property: &str, inputs: I, mut check: impl FnMut(&str) -> Option<String>)
 where
     I: IntoIterator<Item = &'a str>,
@@ -235,7 +206,6 @@ fn shorten(text: &str) -> String {
     format!("{head:?}... ({} bytes)", text.len())
 }
 
-/// Accepted inputs for the properties about accepted input. Fails if there are none.
 fn accepted_events(property: &str) -> Vec<(String, CalendarEvent)> {
     let mut candidates: Vec<String> = accepted_corpus().into_iter().map(str::to_owned).collect();
     candidates.extend(fuzz_inputs());
@@ -264,10 +234,6 @@ fn accepted_events(property: &str) -> Vec<(String, CalendarEvent)> {
     accepted
 }
 
-// ---------------------------------------------------------------------------------------------
-// Parsing
-
-/// Property 1, 2: `parse` returns `Ok` or `Err` for arbitrary text and for near-miss expressions.
 #[test]
 fn parse_never_panics() {
     let inputs = fuzz_inputs();
@@ -278,7 +244,6 @@ fn parse_never_panics() {
     );
 }
 
-/// Property 3: An error offset lies within the input and on a character boundary.
 #[test]
 fn error_offset_is_a_char_boundary_within_the_input() {
     let inputs = fuzz_inputs();
@@ -296,7 +261,6 @@ fn error_offset_is_a_char_boundary_within_the_input() {
     );
 }
 
-/// Property 4: Error messages are short printable ASCII and never repeat the input.
 #[test]
 fn error_message_is_short_ascii_and_does_not_echo_input() {
     const MARKER: &str = "Xq9INJECT";
@@ -333,8 +297,6 @@ fn error_message_is_short_ascii_and_does_not_echo_input() {
     );
 }
 
-/// Property 5: Huge numbers, long fractions, leading zeros and huge repetitions are decided without a
-/// panic.
 #[test]
 fn numeric_overflow_does_not_panic() {
     let inputs = [
@@ -368,7 +330,6 @@ fn numeric_overflow_does_not_panic() {
     );
 }
 
-/// Property 6: Pathological inputs up to a megabyte finish within the time limit.
 #[test]
 fn parse_time_is_linear_in_input_length() {
     type Family = (&'static str, fn(usize) -> String);
@@ -422,7 +383,6 @@ struct LimitCase {
     accept: bool,
 }
 
-/// For each numeric field: 241 items pass and 242 fail, for distinct values, ranges and repeats.
 fn item_limit_cases() -> Vec<LimitCase> {
     type Item = fn(usize) -> String;
     let fields: [(&str, &str, &str, Item, &str, &str); 7] = [
@@ -465,8 +425,6 @@ fn item_limit_cases() -> Vec<LimitCase> {
     let mut cases = Vec::new();
     for (field, prefix, suffix, value, range, repeat) in fields {
         for shape in ["values", "ranges", "repeats"] {
-            // systemd rejects some lists of distinct days from the end well below the cap, by a
-            // rule that is not known yet, so that list says nothing about the cap.
             if field == "day from end" && shape == "values" {
                 continue;
             }
@@ -501,7 +459,6 @@ fn item_limit_cases() -> Vec<LimitCase> {
     cases
 }
 
-/// An expression with 241 items in each numeric field. systemd accepts it (`cases.tsv`).
 fn every_field_at_the_limit() -> String {
     let list = |f: &dyn Fn(usize) -> String| (0..MAX_ITEMS).map(f).collect::<Vec<_>>().join(",");
     format!(
@@ -515,8 +472,6 @@ fn every_field_at_the_limit() -> String {
     )
 }
 
-/// Property 7: The list limit is 241 items per numeric field, counted before duplicates are removed.
-/// Weekday lists have no limit.
 #[test]
 fn list_item_limit() {
     let mut failures = Vec::new();
@@ -531,7 +486,6 @@ fn list_item_limit() {
     assert!(failures.is_empty(), "list limit:\n{}", failures.join("\n"));
 }
 
-/// Property 8: The normalized form has a fixed upper bound on its length, whatever the input length.
 #[test]
 fn normalized_length_is_bounded() {
     let accepted = accepted_events("normalized length");
@@ -548,8 +502,6 @@ fn normalized_length_is_bounded() {
     );
 }
 
-/// Property 9: Normalizing is idempotent: the normalized form parses to an equal value that prints the
-/// same text.
 #[test]
 fn normalization_is_idempotent() {
     let accepted = accepted_events("idempotence");
@@ -585,7 +537,6 @@ fn normalization_is_idempotent() {
     );
 }
 
-/// Property 10: The normalized form uses only the characters of the grammar.
 #[test]
 fn normalized_form_uses_the_grammar_alphabet() {
     let accepted = accepted_events("output alphabet");
@@ -604,11 +555,6 @@ fn normalized_form_uses_the_grammar_alphabet() {
     );
 }
 
-// ---------------------------------------------------------------------------------------------
-// Time zone names
-
-/// Property 11: Names that look like paths, or use characters outside `[A-Za-z0-9_+-/]`, are parse errors.
-/// Well-formed names in the same positions parse, so the rejections are not an accident.
 #[test]
 fn path_like_time_zone_names_are_parse_errors() {
     let long = "A".repeat(10_000);
@@ -654,7 +600,6 @@ fn path_like_time_zone_names_are_parse_errors() {
     );
 }
 
-/// Property 12: `UTC` in any case means UTC and prints as `UTC`.
 #[test]
 fn utc_is_case_insensitive() {
     let mut failures = Vec::new();
@@ -671,9 +616,6 @@ fn utc_is_case_insensitive() {
         failures.join("\n")
     );
 }
-
-// ---------------------------------------------------------------------------------------------
-// Computation
 
 #[cfg(feature = "jiff")]
 mod computation {
@@ -697,7 +639,6 @@ mod computation {
         jiff::SignedDuration::from_micros(us)
     }
 
-    /// Parses every fixture expression the crate accepts. Fails if it accepts none.
     fn parsed_corpus(property: &str) -> Vec<(&'static str, CalendarEvent)> {
         let mut inputs = accepted_corpus();
         let limit = Box::leak(every_field_at_the_limit().into_boxed_str());
@@ -730,9 +671,6 @@ mod computation {
         zones
     }
 
-    /// Property 12: names other than `UTC` must match the database exactly. jiff's own lookup
-    /// ignores case, but systemd rejects `daily asia/seoul`. A local abbreviation (`KST`) is
-    /// well-formed, so it parses, and `upcoming` reports it as unknown.
     #[test]
     fn other_time_zone_names_match_exactly() {
         let seoul = tz("Asia/Seoul");
@@ -776,8 +714,6 @@ mod computation {
         );
     }
 
-    /// Property 13: `upcoming` and its iterator never panic, at the edges of `Timestamp` and of the
-    /// supported years, in zones with odd transitions.
     #[test]
     fn computation_never_panics() {
         let corpus = parsed_corpus("computation panics");
@@ -830,7 +766,6 @@ mod computation {
         );
     }
 
-    /// Property 14: Elapses are strictly increasing, all later than the base, with microsecond precision.
     #[test]
     fn elapses_increase_strictly_after_the_base() {
         let corpus = parsed_corpus("increasing elapses");
@@ -883,7 +818,6 @@ mod computation {
         );
     }
 
-    /// Property 15: Every elapse, read on the wall clock of the effective zone, matches every field.
     #[test]
     fn elapses_match_the_expression() {
         let mut rng = Rng::new(15);
@@ -932,8 +866,6 @@ mod computation {
         );
     }
 
-    /// Property 16: Within a window, the crate finds exactly what the slow reference finds, including
-    /// windows that hold a daylight saving gap or fold.
     #[test]
     fn elapses_equal_the_reference() {
         let mut rng = Rng::new(16);
@@ -995,7 +927,6 @@ mod computation {
         );
     }
 
-    /// Property 17: The slowest known inputs finish within the time limit.
     #[test]
     fn slow_inputs_finish_in_time() {
         let limit_expr = every_field_at_the_limit();
@@ -1067,10 +998,6 @@ mod computation {
         assert!(failures.is_empty(), "slow inputs:\n{}", failures.join("\n"));
     }
 
-    /// Property 18: A wall-clock time in a gap is skipped, not shifted: an expression with a fixed
-    /// hour and minute elapses only at that wall-clock time. A wall-clock time that occurs twice elapses once, at the
-    /// earliest instant after the base: the later instant appears only when the earlier one is
-    /// not after the base.
     #[test]
     fn daylight_saving_policy() {
         let exprs = [
@@ -1133,7 +1060,6 @@ mod computation {
         );
     }
 
-    /// Property 19: A microsecond repetition yields consecutive microseconds.
     #[test]
     fn dense_iterator_steps_by_one_microsecond() {
         let event: CalendarEvent = "*:*:0/0.000001".parse().expect("systemd accepts this");
@@ -1157,8 +1083,6 @@ mod computation {
         }
     }
 
-    /// Property 20: After `None` the iterator stays `None`. An expression with no future elapse yields
-    /// `None` first.
     #[test]
     fn exhausted_iterator_stays_exhausted() {
         let cases: [(&str, &str, &[&str]); 5] = [
@@ -1193,17 +1117,6 @@ mod computation {
         }
     }
 
-    /// Prints generated cases in `cases.tsv` form followed by the reference's first elapses, to
-    /// check the reference against systemd:
-    ///
-    /// ```text
-    /// cargo test --test robustness -- --ignored --nocapture print_generated > gen.tsv
-    /// grep -v '^[a-z]' gen.tsv | cut -f1-3 | oracle/run.sh > gen.expected.tsv
-    /// ```
-    ///
-    /// Column 4 of `gen.tsv` must be a prefix of column 6 of `gen.expected.tsv` (a prefix only
-    /// when the reference reached the end of its window), and column 4 of `gen.expected.tsv` must
-    /// be `ok`.
     #[test]
     #[ignore = "prints cases for oracle/run.sh"]
     fn print_generated_cases_for_oracle() {
@@ -1261,7 +1174,6 @@ mod computation {
         "Pacific/Chatham",
     ];
 
-    /// Bases just around the 2026 transitions of zones with gaps and folds of 30 and 60 minutes.
     fn dst_bases() -> Vec<(&'static str, Timestamp)> {
         let transitions = [
             ("America/New_York", "2026-03-08T07:00:00Z"),
@@ -1297,19 +1209,11 @@ mod computation {
         Timestamp::from_microsecond(second * 1_000_000 + micros).unwrap()
     }
 
-    // -----------------------------------------------------------------------------------------
-    // The test's own model of an expression
-
-    /// One list item. Only shapes whose meaning systemd confirmed are generated.
     #[derive(Clone, Copy, Debug)]
     enum Item {
-        /// `v`
         Value(u32),
-        /// `a..b`
         Range(u32, u32),
-        /// `a/r`: `a`, `a + r`, ... up to the field maximum.
         Every(u32, u32),
-        /// `a..b/r`
         Stepped(u32, u32, u32),
     }
 
@@ -1333,7 +1237,6 @@ mod computation {
         }
     }
 
-    /// `None` is `*`.
     #[derive(Clone, Debug)]
     struct Field(Option<Vec<Item>>);
 
@@ -1359,8 +1262,6 @@ mod computation {
             Field(self.0.map(|items| items.into_iter().take(1).collect()))
         }
 
-        /// Items within `lo..=hi`. Every `a/r` keeps `a + r <= max`, the rule systemd enforces.
-        /// `simple` limits the shapes to values and plain ranges.
         fn generate(rng: &mut Rng, any: usize, lo: u32, hi: u32, max: u32, simple: bool) -> Field {
             if rng.percent(any) {
                 return Field(None);
@@ -1384,12 +1285,10 @@ mod computation {
 
     #[derive(Clone, Debug)]
     struct Spec {
-        /// Monday is 0. `None` means no weekday condition.
         weekdays: Option<Vec<u8>>,
         year: Field,
         month: Field,
         day: Field,
-        /// The day field counts from the end of the month (`~`, 1 is the last day).
         from_end: bool,
         hour: Field,
         minute: Field,
@@ -1408,8 +1307,6 @@ mod computation {
                     .then(|| (0..rng.range(1, 4)).map(|_| rng.below(7) as u8).collect()),
                 year: Field::generate(rng, 80, 2026, 2029, 2199, false),
                 month: Field::generate(rng, 50, 1, 12, 12, false),
-                // systemd rejects some `~` lists (`*-*~1,24,25`, `*-*~6..8,26`; see `cases.tsv`)
-                // by a rule not yet pinned down, so a day counted from the end gets one item.
                 day: if from_end {
                     Field::generate(rng, 0, 1, 28, 28, true).first_only()
                 } else {
@@ -1430,7 +1327,6 @@ mod computation {
             }
         }
 
-        /// Elapses every few minutes, so a window around a transition holds many of them.
         fn generate_dense(rng: &mut Rng) -> Spec {
             Spec {
                 weekdays: None,
@@ -1500,18 +1396,12 @@ mod computation {
         }
     }
 
-    /// The next elapse after `after` with a wall-clock date up to `last_day`, found by walking
-    /// every second of every matching day. A gap time is skipped; a fold time elapses at its
-    /// earliest instant after `after`.
     fn reference_next(
         spec: &Spec,
         after: Timestamp,
         zone: &TimeZone,
         last_day: Date,
     ) -> Option<Timestamp> {
-        // The search starts at the wall-clock reading of `after + 1µs`. This differs from the
-        // reading of `after` plus 1µs only when `after` is the last microsecond before a fold;
-        // systemd then continues in the repeated hour (`cases.tsv`, "1µs before a fold").
         let start = zone.to_datetime(after + micro(1));
         let start_hms = (start.hour(), start.minute(), start.second());
         let start_is_whole = start.subsec_nanosecond() == 0;

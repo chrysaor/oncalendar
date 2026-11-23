@@ -1,14 +1,4 @@
 #!/bin/sh
-# Verification helper for the oncalendar crate. Run from any directory.
-#
-#   verify doctor                         check that this checkout can be verified
-#   verify one <tz> <base> <expression>   compare one case against real systemd
-#   verify compare [cases.tsv]            compare a whole case file (default: tests/fixtures/cases.tsv)
-#   verify gates                          run tests, the security gate, the weight gate, the oracle drift check
-#   verify clean                          remove build output of this helper; evidence is kept
-#
-# Evidence goes to .verify/<UTC timestamp>-<command>/ in the repository root.
-# Exit code 0 means the command's check passed.
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../../../.." && pwd)
@@ -28,13 +18,10 @@ build_probe() {
 	CARGO_TARGET_DIR="$probe_target" cargo build --quiet --release --manifest-path "$skill/probe/Cargo.toml"
 }
 
-# Counts the case rows of a file: every line that is neither blank nor a "#" line.
 count_rows() {
 	grep -vc -e '^#' -e '^$' "$1" || true
 }
 
-# Reads cases on stdin. Writes oracle.tsv, crate.tsv, diff.txt into $1.
-# Returns 0 when every row matches, 1 on a difference, 3 when a side did not answer every case.
 compare_into() {
 	dir=$1
 	cat > "$dir/cases.tsv"
@@ -51,9 +38,6 @@ compare_into() {
 		echo "broken: the probe could not read the zone or base time of a case (see $dir/crate.tsv)" | tee "$dir/summary.txt"
 		return 3
 	fi
-	# systemd sometimes parses an expression and then gives up computing an elapse. The oracle
-	# marks such rows "unresolved". For those, only acceptance is compared: both sides are
-	# reduced to the first three columns plus whether the expression was accepted.
 	awk -F '\t' 'NR > 1 && $4 == "unresolved" { print NR }' "$dir/oracle.tsv" > "$dir/unresolved.lines"
 	reduce() {
 		awk -F '\t' -v OFS='\t' 'FILENAME == ARGV[1] { skip[$1] = 1; next }
@@ -70,7 +54,6 @@ compare_into() {
 		return 3
 	fi
 	unresolved=$(grep -c '' "$dir/unresolved.lines" || true)
-	# Both bodies have one row per case, so each differing case is one "-" line in the diff.
 	if diff -u "$dir/oracle.body" "$dir/crate.body" > "$dir/diff.txt"; then
 		differing=0
 	else
@@ -133,6 +116,7 @@ gates)
 		if "$@" > "$dir/$name.txt" 2>&1; then echo "PASS  $name"; else echo "FAIL  $name   (see $dir/$name.txt)"; fail=1; fi
 	}
 	gate fmt cargo fmt --check
+	gate no-comments scripts/check-no-comments.sh
 	gate test-default cargo test --all-features
 	gate test-no-default cargo test --no-default-features
 	gate security scripts/check-security.sh
@@ -147,7 +131,18 @@ clean)
 	echo "kept    $root/.verify"
 	;;
 *)
-	sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
+	cat <<'USAGE'
+Verification helper for the oncalendar crate. Run from any directory.
+
+  verify doctor                         check that this checkout can be verified
+  verify one <tz> <base> <expression>   compare one case against real systemd
+  verify compare [cases.tsv]            compare a whole case file (default: tests/fixtures/cases.tsv)
+  verify gates                          run the tests and every gate
+  verify clean                          remove build output of this helper; evidence is kept
+
+Evidence goes to .verify/<UTC timestamp>-<command>/ in the repository root.
+Exit code 0 means the check passed, 1 a difference, 3 a side that did not answer.
+USAGE
 	exit 2
 	;;
 esac

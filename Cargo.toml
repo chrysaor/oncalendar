@@ -8,24 +8,22 @@ license = "MIT OR Apache-2.0"
 readme = "README.md"
 keywords = ["systemd", "calendar", "timer", "schedule", "parser"]
 categories = ["date-and-time", "parser-implementations"]
-# An allow list: a stray file in the checkout must never reach crates.io.
 include = ["/src", "/tests", "/README.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
 
 [features]
 default = ["jiff"]
-# Adds `CalendarEvent::upcoming`. Without it the crate parses and normalizes only, with no dependencies.
 jiff = ["dep:jiff"]
 
 [dependencies]
 jiff = { version = "1", default-features = false, features = ["std", "tzdb-zoneinfo", "tzdb-bundle-platform"], optional = true }
 
 [dev-dependencies]
-# The tests' own zone lookups use the bundled database. A zone named inside an expression is still
-# looked up by the library through jiff, which prefers the host's zoneinfo.
 jiff = { version = "1", default-features = false, features = ["std", "tzdb-bundle-always"] }
 
-# The input is untrusted text, so the library must not panic and must not use unsafe code.
-# These lints turn each of those rules into a build failure.
+[[test]]
+name = "oracle"
+required-features = ["jiff"]
+
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"

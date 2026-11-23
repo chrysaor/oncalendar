@@ -1,18 +1,4 @@
 #!/usr/bin/perl
-# Runs `systemd-analyze calendar` for each case on stdin and prints one TSV row per case.
-#
-# Input row:  <timezone> TAB <base time> TAB <expression>
-# Output row: <timezone> TAB <base time> TAB <expression> TAB <status> TAB <normalized> TAB <elapses>
-#
-#   status      "ok"          systemd parsed the expression and computed its elapses
-#               "error"       systemd rejected the expression
-#               "unresolved"  systemd parsed the expression but gave up computing an elapse
-#   normalized  the normalized form, or "-" when systemd did not print one
-#   elapses     comma-separated UTC instants (RFC 3339, second precision),
-#               or "never" when the expression never elapses after the base time,
-#               or "-" when status is not "ok"
-#
-# Lines that are empty or start with "#" pass through unchanged.
 use strict;
 use warnings;
 
@@ -52,7 +38,6 @@ while (my $line = <STDIN>) {
 	}
 
 	if ($exit != 0) {
-		# The two failures mean different things, so an unrecognized one must not pass as either.
 		my $status =
 			  (grep { /^Failed to parse calendar specification / } @lines) ? 'error'
 			: (grep { /^Failed to determine next elapse / } @lines)        ? 'unresolved'
@@ -66,7 +51,6 @@ while (my $line = <STDIN>) {
 	if (@local == 1 && $local[0] eq 'never') {
 		$elapses = 'never';
 	} else {
-		# systemd prints the "(in UTC)" line only when the local zone is not UTC.
 		my @instants = @utc ? @utc : @local;
 		@instants == @local or die "line $n: mismatched UTC lines for '$expr'\n";
 		$elapses = join(',', map {

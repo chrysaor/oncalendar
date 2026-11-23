@@ -7,6 +7,13 @@ A Rust library that parses systemd calendar event expressions (`OnCalendar=`), p
 - Everything committed to this repository is English: code, comments, docs, commit messages, PR text.
 - Conversation with the maintainer follows the maintainer's global settings.
 
+## No comments
+
+- Code, scripts, and configuration carry no comments. Names and structure say what the code does, and the reasons go in `docs/architecture.md` or the commit message.
+- The one exception is `///` and `//!` documentation in `src/`, because it is the published API reference.
+- The `#` lines in `tests/fixtures/*.tsv` are section titles of the fixture format, not comments.
+- `scripts/check-no-comments.sh` enforces this. It runs in `verify gates` and in CI.
+
 ## Clean room (license rule, not a preference)
 
 systemd is LGPL-2.1-or-later. This crate is not.

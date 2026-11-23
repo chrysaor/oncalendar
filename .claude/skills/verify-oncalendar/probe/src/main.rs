@@ -1,12 +1,3 @@
-//! Drives the `oncalendar` public API the way a dependent crate would and prints
-//! rows in the same format as `oracle/query.pl`, so the two outputs can be diffed.
-//!
-//! Input (stdin), one case per line: `<time zone>\t<base time>\t<expression>`.
-//! Output (stdout): `<time zone>\t<base time>\t<expression>\t<ok|error>\t<normalized|->\t<elapses|never|->`.
-//! Blank lines and lines that start with `#` pass through unchanged.
-//!
-//! The first argument is the number of elapses to print (default 5).
-
 use std::io::{self, BufRead, Write};
 
 use jiff::Timestamp;
@@ -75,7 +66,6 @@ fn run_case(
     ("ok", event.to_string(), elapses)
 }
 
-/// Parses `YYYY-MM-DD HH:MM:SS[.ffffff] <time zone>`, the form the fixtures use.
 fn parse_base(base: &str) -> Option<Timestamp> {
     let (civil, zone) = base.rsplit_once(' ')?;
     let civil: DateTime = civil.parse().ok()?;

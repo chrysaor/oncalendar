@@ -730,6 +730,19 @@ Computation:
 - `deny.toml` allows only the MIT license, which every dependency offers, and bans duplicate crate versions.
 - `.github/workflows/ci.yml` runs four jobs: `test` (format, clippy, tests, docs), `security`, `weight`, and `oracle`.
 
+### Tooling notes
+
+The repository carries no code comments (see `CLAUDE.md`), so the reasons behind the tooling live here.
+
+- `oracle/Dockerfile` pins the base image by digest and `systemd` and `tzdata` by version. When Debian retires those versions the build fails. Raise the versions and regenerate `tests/fixtures/expected.tsv` in the same change.
+- `oracle/query.pl` treats the two systemd failures differently and stops on any failure text it does not recognize, so an unknown failure cannot pass as `error` or `unresolved`.
+- `Cargo.toml` uses an `include` allow list, so a stray file in a checkout cannot reach crates.io.
+- The dev-dependency on jiff turns on `tzdb-bundle-always`. The tests read their own zones from the bundled database. A zone named inside an expression is still looked up by the library through jiff, which prefers the host's zoneinfo.
+- `scripts/check-weight.sh` stops when `cargo tree` fails, so an empty graph cannot read as zero dependencies. Its default-feature limit of 2 is for a Unix host. Other targets pull jiff's bundled database crates.
+- CI pins actions by commit so that a moved tag cannot change what runs. The pins are `actions/checkout` v7.0.1 and `EmbarkStudios/cargo-deny-action` v2.1.3. The `msrv` job must use the `rust-version` from `Cargo.toml`. The security job passes `--skip-deny` because the cargo-deny action runs there.
+- The slow reference in `tests/robustness.rs` can be checked against systemd. Run `cargo test --test robustness -- --ignored --nocapture print_generated > gen.tsv`, then `grep -v '^[a-z]' gen.tsv | cut -f1-3 | oracle/run.sh > gen.expected.tsv`. Column 4 of `gen.tsv` must be a prefix of column 6 of `gen.expected.tsv`, and column 4 of `gen.expected.tsv` must be `ok`. The reference skips shapes whose rules are still open: a day counted from the end gets one item.
+- In `tests/robustness.rs`, the list-cap test leaves out lists of distinct days from the end, because systemd rejects some of them below the cap by a rule that is not known.
+
 ## Known differences from systemd
 
 - **Unknown time zone names fail later.** systemd rejects `daily Nowhere/Bogus` at parse time. This crate parses it, and `upcoming` returns `UnknownTimeZone`. A user who only parses sees the expression accepted.

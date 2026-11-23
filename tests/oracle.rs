@@ -1,18 +1,5 @@
-//! Differential test against real systemd.
-//!
-//! `tests/fixtures/cases.tsv` lists the inputs. `oracle/run.sh` runs them through
-//! `systemd-analyze calendar` and writes `tests/fixtures/expected.tsv`. This test runs every row
-//! through the public API, prints `passed N/M` and every mismatch, and fails if any row differs.
-//!
-//! systemd accepts a row when the expression parses and every time zone in it exists. This crate
-//! checks the time zone when `upcoming` runs, so a row counts as accepted when both `parse` and
-//! `upcoming` succeed.
-//!
-//! systemd sometimes parses an expression and then gives up searching for the next elapse
-//! (status `unresolved`). This crate always finds an answer, so for those rows only the parse
-//! result and the normalized form are compared.
-#![cfg(feature = "jiff")]
 #![allow(
+    missing_docs,
     clippy::panic,
     clippy::arithmetic_side_effects,
     reason = "test code: a panic is a test failure"
@@ -28,30 +15,24 @@ use oncalendar::CalendarEvent;
 const CASES: &str = include_str!("fixtures/cases.tsv");
 const EXPECTED: &str = include_str!("fixtures/expected.tsv");
 
-/// What systemd printed for one row.
 #[derive(Debug)]
 enum Expected {
     Rejected,
     Accepted {
         normalized: String,
-        /// UTC seconds. Empty means "never".
         elapses: Vec<i64>,
     },
-    /// Parsed, then systemd gave up on the elapses. It prints the normalized form only sometimes.
     Unresolved {
         normalized: Option<String>,
     },
 }
 
-/// What this crate does with one row.
 #[derive(Debug)]
 enum Actual {
     ParseRejected,
-    /// Parsed, but `upcoming` reported an unknown time zone.
     ZoneRejected {
         normalized: String,
     },
-    /// Parsed. `elapses` is `None` when the row did not ask for them.
     Accepted {
         normalized: String,
         elapses: Option<Vec<i64>>,
@@ -84,7 +65,6 @@ impl Expected {
 }
 
 struct Row<'a> {
-    /// Line number in `cases.tsv`.
     line: usize,
     tz: &'a str,
     base: &'a str,
@@ -138,7 +118,6 @@ fn matches_systemd() {
     }
 }
 
-/// Runs one row through the crate. `Err` describes a panic or a row the harness cannot run.
 fn run(row: &Row<'_>, iterations: usize, db: &TimeZoneDatabase) -> Result<Actual, String> {
     let local = db
         .get(row.tz)
@@ -167,7 +146,6 @@ fn run(row: &Row<'_>, iterations: usize, db: &TimeZoneDatabase) -> Result<Actual
     .map_err(|_| "panicked".to_owned())
 }
 
-/// Reads both files and pairs each case with its expectation.
 fn load() -> Result<(usize, Vec<Row<'static>>), String> {
     let header = EXPECTED.lines().next().unwrap_or_default();
     let iterations = header
@@ -176,7 +154,6 @@ fn load() -> Result<(usize, Vec<Row<'static>>), String> {
         .ok_or_else(|| format!("expected.tsv: no iterations=N in the first line {header:?}"))?;
 
     let cases = data_lines(CASES);
-    // The first line of expected.tsv is a comment, so it drops out here.
     let expectations = data_lines(EXPECTED);
     if cases.len() != expectations.len() {
         return Err(format!(
@@ -224,7 +201,6 @@ fn load() -> Result<(usize, Vec<Row<'static>>), String> {
     Ok((iterations, rows))
 }
 
-/// Rows that are neither empty nor comments, with their 1-based line numbers within `text`.
 fn data_lines(text: &str) -> Vec<(usize, &str)> {
     text.lines()
         .enumerate()
@@ -233,7 +209,6 @@ fn data_lines(text: &str) -> Vec<(usize, &str)> {
         .collect()
 }
 
-/// `2026-01-01 00:00:00 UTC` or `2026-01-01 00:00:00.5 UTC`, the form systemd's `--base-time` takes.
 fn parse_base(base: &str) -> Result<Timestamp, String> {
     let civil = base
         .strip_suffix(" UTC")
@@ -313,7 +288,6 @@ fn describe_elapses(elapses: &[i64]) -> String {
         .join(",")
 }
 
-/// Keeps the report readable for the 241-item rows.
 fn shorten(text: &str) -> String {
     const KEEP: usize = 60;
     if text.chars().count() <= KEEP {

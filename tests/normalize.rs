@@ -1,13 +1,5 @@
-//! Parsing and normalization against real systemd, in every feature configuration.
-//!
-//! `tests/oracle.rs` needs the `jiff` feature. This test does not, so the build without
-//! dependencies is also compared with systemd. It reads the rows of
-//! `tests/fixtures/expected.tsv` that systemd accepted and checks that each expression parses and
-//! prints the same normalized form.
-//!
-//! Rejected rows are left to `tests/oracle.rs`: systemd also rejects an unknown time zone, and
-//! this crate can tell an unknown zone only with the `jiff` feature.
 #![allow(
+    missing_docs,
     clippy::panic,
     clippy::arithmetic_side_effects,
     reason = "test code: a panic is a test failure"
